@@ -1,0 +1,594 @@
+import { Page } from "@playwright/test";
+
+export class PaymentPage {
+  readonly page: Page;
+  private hasClickedPay = false;
+  private bookingFlowCompleted = false;
+
+  constructor(page: Page) {
+    this.page = page;
+  }
+
+  async waitForPage() {
+    await this.page.waitForLoadState("domcontentloaded");
+    await this.page
+      .locator(
+        [
+          ':text("Complete your payment")',
+          ':text("Enter your card details here")',
+          ':text("Cardholder name")',
+          ':text("Card number")',
+          'button:has-text("Pay")',
+        ].join(", "),
+      )
+      .first()
+      .waitFor({ state: "visible", timeout: 30_000 });
+  }
+
+  private getPaymentScope() {
+    return this.page
+      .locator(
+        [
+          'section:has-text("Complete your payment")',
+          'div:has-text("Complete your payment"):has(input)',
+          'form:has(:text("Cardholder name"))',
+          'form:has(:text("Card number"))',
+        ].join(", "),
+      )
+      .first();
+  }
+
+  /**
+   * Single fast probe that detects which scenario we are in.
+   * Runs all checks in parallel — no serial timeout chains.
+   *
+   * "saved_card_selected"  — "Select a saved card" text visible, no manual inputs
+   * "manual_form"          — card input fields present
+   * "unknown"              — page still loading
+   */
+  private async detectPaymentScenario(): Promise<
+    "saved_card_selected" | "manual_form" | "unknown"
+  > {
+    const [savedCardTextVisible, cardholderVisible, cardNumberVisible] =
+      await Promise.all([
+        this.page
+          .locator(':text("Select a saved card")')
+          .first()
+          .isVisible({ timeout: 800 })
+          .catch(() => false),
+        this.page
+          .locator(
+            'input[name*="cardholder"], input[id*="cardholder"], input[autocomplete="cc-name"]',
+          )
+          .first()
+          .isVisible({ timeout: 800 })
+          .catch(() => false),
+        this.page
+          .locator(
+            'input[name*="cardNumber"], input[id*="cardNumber"], input[autocomplete="cc-number"]',
+          )
+          .first()
+          .isVisible({ timeout: 800 })
+          .catch(() => false),
+      ]);
+
+    const manualFieldsVisible = cardholderVisible || cardNumberVisible;
+
+    if (savedCardTextVisible && !manualFieldsVisible) {
+      return "saved_card_selected";
+    }
+    if (manualFieldsVisible) {
+      return "manual_form";
+    }
+    return "unknown";
+  }
+
+  /**
+   * Only called in the saved-card scenario.
+   * Single fast aria/class check — clicks only if nothing is already selected.
+   */
+  private async ensureSavedCardSelected(): Promise<void> {
+    const alreadySelected = await this.page
+      .locator(
+        [
+          ".ant-radio-wrapper-checked",
+          ".ant-radio-button-wrapper-checked",
+          '[role="radio"][aria-checked="true"]',
+          'input[type="radio"]:checked',
+          '[class*="selected"]:has(:text("****"))',
+          '[class*="active"]:has(:text("****"))',
+        ].join(", "),
+      )
+      .first()
+      .isVisible({ timeout: 300 })
+      .catch(() => false);
+
+    if (alreadySelected) {
+      console.log("[PaymentPage] Card already selected — skipping click");
+      return;
+    }
+
+    const cardOption = this.page
+      .locator(
+        [
+          'label:has(input[type="radio"])',
+          ".ant-radio-wrapper",
+          '[role="radio"]',
+          'input[type="radio"]',
+        ].join(", "),
+      )
+      .first();
+
+    const visible = await cardOption
+      .isVisible({ timeout: 1_000 })
+      .catch(() => false);
+
+    if (visible) {
+      await cardOption.click({ force: true }).catch(async () => {
+        await cardOption.evaluate((el: HTMLElement) => el.click());
+      });
+      await this.page.waitForTimeout(200);
+      console.log("[PaymentPage] Clicked card option to select it");
+    }
+  }
+
+  private getChallengeScope() {
+    return this.page
+      .locator(
+        [
+          ':text("3dsecure.io")',
+          ':text("sandbox stand-in challenge page")',
+          ':text("Pass challenge")',
+          ':text("Fail challenge")',
+        ].join(", "),
+      )
+      .first();
+  }
+
+  private async findChallengeFrameIndex(): Promise<number> {
+    const frames = this.page.frames();
+    for (let i = 0; i < frames.length; i++) {
+      const visible = await frames[i]
+        .locator(
+          [
+            'button:has-text("Pass challenge")',
+            ':text("Pass challenge")',
+            ':text("3dsecure.io")',
+          ].join(", "),
+        )
+        .first()
+        .isVisible()
+        .catch(() => false);
+      if (visible) return i;
+    }
+    return -1;
+  }
+
+  async isChallengeVisible(): Promise<boolean> {
+    const pageChallengeVisible = await this.getChallengeScope()
+      .isVisible({ timeout: 1_000 })
+      .catch(() => false);
+    if (pageChallengeVisible) return true;
+    return (await this.findChallengeFrameIndex()) >= 0;
+  }
+
+  private async fillField(
+    locator: ReturnType<Page["locator"]>,
+    value: string,
+    fieldName: string,
+  ) {
+    const visible = await locator
+      .first()
+      .isVisible({ timeout: 2_000 })
+      .catch(() => false);
+    if (!visible) {
+      console.log(
+        `[PaymentPage] ${fieldName} input not visible — skipping manual fill`,
+      );
+      return;
+    }
+
+    await locator.waitFor({ state: "visible", timeout: 5_000 });
+    await locator.scrollIntoViewIfNeeded().catch(() => {});
+    await locator.click();
+    await locator.clear().catch(() => {});
+    await locator.fill(value);
+    await this.page.waitForTimeout(150);
+    const currentValue = await locator.inputValue().catch(() => "");
+    console.log(
+      `[PaymentPage] ${fieldName} value after fill: "${currentValue}"`,
+    );
+  }
+
+  private cardholderInput() {
+    const scope = this.getPaymentScope();
+    return scope
+      .locator(
+        [
+          'label:has-text("Cardholder name")',
+          ':text("Cardholder name")',
+          'input[name*="cardholder"]',
+          'input[id*="cardholder"]',
+          'input[autocomplete="cc-name"]',
+        ].join(", "),
+      )
+      .locator("xpath=following::input[1]")
+      .first()
+      .or(
+        scope
+          .locator(
+            'input[name*="cardholder"], input[id*="cardholder"], input[autocomplete="cc-name"], input[type="text"]',
+          )
+          .first(),
+      );
+  }
+
+  private cardNumberInput() {
+    const scope = this.getPaymentScope();
+    return scope
+      .locator(
+        [
+          'label:has-text("Card number")',
+          ':text("Card number")',
+          'input[name*="cardNumber"]',
+          'input[id*="cardNumber"]',
+          'input[autocomplete="cc-number"]',
+        ].join(", "),
+      )
+      .locator("xpath=following::input[1]")
+      .first()
+      .or(
+        scope
+          .locator(
+            'input[name*="cardNumber"], input[id*="cardNumber"], input[autocomplete="cc-number"]',
+          )
+          .first(),
+      )
+      .or(scope.locator("input").nth(1));
+  }
+
+  private expiryInput() {
+    const scope = this.getPaymentScope();
+    return scope
+      .locator(
+        [
+          'label:has-text("Expiry date")',
+          ':text("Expiry date")',
+          'input[name*="expiry"]',
+          'input[id*="expiry"]',
+          'input[autocomplete="cc-exp"]',
+        ].join(", "),
+      )
+      .locator("xpath=following::input[1]")
+      .first()
+      .or(
+        scope
+          .locator(
+            'input[name*="expiry"], input[id*="expiry"], input[autocomplete="cc-exp"]',
+          )
+          .first(),
+      )
+      .or(scope.locator("input").nth(2));
+  }
+
+  private securityCodeInput() {
+    const scope = this.getPaymentScope();
+    return scope
+      .locator(
+        [
+          'label:has-text("Security code")',
+          ':text("Security code")',
+          'input[name*="security"]',
+          'input[name*="cvv"]',
+          'input[id*="security"]',
+          'input[autocomplete="cc-csc"]',
+        ].join(", "),
+      )
+      .locator("xpath=following::input[1]")
+      .first()
+      .or(
+        scope
+          .locator(
+            'input[name*="security"], input[name*="cvv"], input[id*="security"], input[autocomplete="cc-csc"]',
+          )
+          .first(),
+      )
+      .or(scope.locator("input").nth(3));
+  }
+
+  async fillPaymentDetails(data: {
+    cardholderName: string;
+    cardNumber: string;
+    expiryDate: string;
+    securityCode: string;
+  }) {
+    await this.fillField(
+      this.cardholderInput(),
+      data.cardholderName,
+      "cardholder",
+    );
+    await this.fillField(this.cardNumberInput(), data.cardNumber, "cardNumber");
+    await this.fillField(this.expiryInput(), data.expiryDate, "expiryDate");
+    await this.fillField(
+      this.securityCodeInput(),
+      data.securityCode,
+      "securityCode",
+    );
+  }
+
+  private async hasPreFilledPaymentDetails(): Promise<boolean> {
+    const [cardholder, cardNumber, expiry, securityCode] = await Promise.all([
+      this.cardholderInput()
+        .inputValue()
+        .catch(() => ""),
+      this.cardNumberInput()
+        .inputValue()
+        .catch(() => ""),
+      this.expiryInput()
+        .inputValue()
+        .catch(() => ""),
+      this.securityCodeInput()
+        .inputValue()
+        .catch(() => ""),
+    ]);
+
+    const hasValues =
+      cardholder.trim().length > 0 &&
+      cardNumber.trim().length > 0 &&
+      expiry.trim().length > 0 &&
+      securityCode.trim().length > 0;
+
+    console.log(
+      `[PaymentPage] Pre-filled payment details detected: ${hasValues}`,
+    );
+    return hasValues;
+  }
+
+  private async hasManualPaymentFields(): Promise<boolean> {
+    const [cardholderVisible, cardNumberVisible, expiryVisible, cvvVisible] =
+      await Promise.all([
+        this.cardholderInput()
+          .isVisible({ timeout: 500 })
+          .catch(() => false),
+        this.cardNumberInput()
+          .isVisible({ timeout: 500 })
+          .catch(() => false),
+        this.expiryInput()
+          .isVisible({ timeout: 500 })
+          .catch(() => false),
+        this.securityCodeInput()
+          .isVisible({ timeout: 500 })
+          .catch(() => false),
+      ]);
+
+    const hasManual =
+      cardholderVisible || cardNumberVisible || expiryVisible || cvvVisible;
+    console.log(`[PaymentPage] Manual payment fields visible: ${hasManual}`);
+    return hasManual;
+  }
+
+  private async isPayButtonVisible(): Promise<boolean> {
+    return this.page
+      .locator('button:has-text("Pay £"), button:has-text("Pay")')
+      .first()
+      .isVisible({ timeout: 600 })
+      .catch(() => false);
+  }
+
+  async clickPay() {
+    if (await this.isChallengeVisible()) {
+      console.log("[PaymentPage] Challenge already open — skipping Pay click");
+      return;
+    }
+    if (this.hasClickedPay && !(await this.isPayButtonVisible())) {
+      console.log(
+        "[PaymentPage] Pay previously clicked and button not visible — skipping re-click",
+      );
+      return;
+    }
+
+    const payButton = this.page
+      .locator(
+        [
+          'button:has-text("Pay £")',
+          'button:has-text("Pay")',
+          'button[type="submit"]',
+        ].join(", "),
+      )
+      .first();
+
+    await payButton.waitFor({ state: "visible", timeout: 15_000 });
+    console.log(
+      `[PaymentPage] Pay button enabled: ${await payButton.isEnabled().catch(() => false)}`,
+    );
+    await payButton.click({ force: true }).catch(async () => {
+      await payButton.evaluate((el: HTMLElement) => el.click());
+    });
+    this.hasClickedPay = true;
+
+    // Fast poll for booking confirmation (saved-card path — no 3DS).
+    // If it doesn't appear in 3s, fall through to 3DS handler.
+    const confirmedFast = await this.page
+      .locator(
+        [
+          ':text("Booking Confirmed")',
+          ':text("Thank you for scheduling")',
+          'button:has-text("Back to home page")',
+        ].join(", "),
+      )
+      .first()
+      .waitFor({ state: "visible", timeout: 3_000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (confirmedFast) {
+      console.log("[PaymentPage] Booking confirmed immediately (no 3DS)");
+      await this.waitForBookingConfirmedAndGoHome();
+      return;
+    }
+
+    await this.handle3DSChallenge();
+  }
+
+  async handle3DSChallenge() {
+    const isPageChallengeVisible = await this.getChallengeScope()
+      .isVisible({ timeout: 5_000 })
+      .catch(() => false);
+    const challengeFrameIndex = await this.findChallengeFrameIndex();
+
+    if (!isPageChallengeVisible && challengeFrameIndex < 0) {
+      console.log(
+        "[PaymentPage] No 3DS challenge detected — waiting for booking confirmation",
+      );
+      const confirmedWithout3DS = await this.page
+        .locator(
+          [
+            ':text("Booking Confirmed")',
+            ':text("Thank you for scheduling")',
+            'button:has-text("Back to home page")',
+          ].join(", "),
+        )
+        .first()
+        .waitFor({ state: "visible", timeout: 15_000 })
+        .then(() => true)
+        .catch(() => false);
+
+      if (confirmedWithout3DS) {
+        await this.waitForBookingConfirmedAndGoHome();
+      }
+      return;
+    }
+
+    if (isPageChallengeVisible) {
+      const btn = this.page
+        .locator('button:has-text("Pass challenge")')
+        .first();
+      await btn.waitFor({ state: "visible", timeout: 15_000 });
+      await btn.click({ force: true });
+      console.log("[PaymentPage] Clicked Pass challenge on page");
+    } else {
+      const frame = this.page.frames()[challengeFrameIndex];
+      const btn = frame
+        .locator('button:has-text("Pass challenge"), :text("Pass challenge")')
+        .first();
+      await btn.waitFor({ state: "visible", timeout: 15_000 });
+      await btn.click({ force: true });
+      console.log("[PaymentPage] Clicked Pass challenge in iframe");
+    }
+
+    await this.waitForBookingConfirmedAndGoHome();
+  }
+
+  async waitForBookingConfirmedAndGoHome() {
+    await this.page
+      .locator(
+        [
+          ':text("Booking Confirmed")',
+          ':text("Thank you for scheduling your consultation with us")',
+          'button:has-text("Back to home page")',
+        ].join(", "),
+      )
+      .first()
+      .waitFor({ state: "visible", timeout: 15_000 });
+
+    console.log("[PaymentPage] Booking confirmed — clicking Back to home page");
+
+    const backHomeButton = this.page
+      .locator('button:has-text("Back to home page")')
+      .first();
+    await backHomeButton.waitFor({ state: "visible", timeout: 10_000 });
+    await backHomeButton.click({ force: true });
+    await this.page.waitForTimeout(2_000);
+    this.bookingFlowCompleted = true;
+  }
+
+  isBookingFlowCompleted(): boolean {
+    return this.bookingFlowCompleted;
+  }
+
+  /**
+   * Main entry point.
+   *
+   * Scenario 2 (saved card visible) — worst-case time before Pay click:
+   *   payButtonVisible check  ~500ms
+   *   detectPaymentScenario   ~800ms (parallel)
+   *   ensureSavedCardSelected ~300ms
+   *   ─────────────────────────────
+   *   Total                  ~1.6s  (previously 3–8s of serial timeouts)
+   *
+   * Scenario 1 (manual form) — fill fields then Pay + 3DS as before.
+   */
+  async completePayment(data: {
+    cardholderName: string;
+    cardNumber: string;
+    expiryDate: string;
+    securityCode: string;
+  }) {
+    if (this.hasClickedPay) {
+      if (await this.isPayButtonVisible()) {
+        console.log(
+          "[PaymentPage] Pay flag true but button still visible — retrying Pay click",
+        );
+        await this.clickPay();
+      } else {
+        console.log(
+          "[PaymentPage] Pay already clicked — handling challenge/success only",
+        );
+        await this.handle3DSChallenge();
+      }
+      return;
+    }
+
+    if (await this.isChallengeVisible()) {
+      await this.handle3DSChallenge();
+      return;
+    }
+
+    const payButtonAlreadyVisible = await this.page
+      .locator('button:has-text("Pay £"), button:has-text("Pay")')
+      .first()
+      .isVisible({ timeout: 500 })
+      .catch(() => false);
+
+    if (!payButtonAlreadyVisible) {
+      await this.waitForPage();
+    }
+
+    const scenario = await this.detectPaymentScenario();
+    console.log(`[PaymentPage] Detected scenario: ${scenario}`);
+
+    if (scenario === "saved_card_selected") {
+      await this.ensureSavedCardSelected();
+      await this.clickPay();
+      return;
+    }
+
+    if (scenario === "unknown") {
+      await this.waitForPage();
+      const scenarioAfterWait = await this.detectPaymentScenario();
+      console.log(
+        `[PaymentPage] Scenario after waitForPage: ${scenarioAfterWait}`,
+      );
+      if (scenarioAfterWait === "saved_card_selected") {
+        await this.ensureSavedCardSelected();
+        await this.clickPay();
+        return;
+      }
+    }
+
+    if (!(await this.hasManualPaymentFields())) {
+      await this.ensureSavedCardSelected();
+      await this.clickPay();
+      return;
+    }
+
+    const prefilled = await this.hasPreFilledPaymentDetails();
+    if (!prefilled) {
+      await this.fillPaymentDetails(data);
+    } else {
+      console.log("[PaymentPage] Payment form already filled — skipping");
+    }
+
+    await this.clickPay();
+  }
+}

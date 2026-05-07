@@ -311,19 +311,6 @@ test.describe("Conditions flow", () => {
           case "sign_up": {
             console.log("→ Handling sign-up step");
 
-            const hasEmail = await page
-              .locator('input[name="email"], input[type="email"]')
-              .first()
-              .isVisible()
-              .catch(() => false);
-
-            if (hasEmail) {
-              await signup.fillContactDetails(TEST_USER.email, TEST_USER.phone);
-              await signup.submitAndBook();
-              await page.waitForTimeout(3_000);
-              break;
-            }
-
             const hasNHSForm = await page
               .locator('input[name="first_name"]')
               .isVisible()
@@ -338,8 +325,25 @@ test.describe("Conditions flow", () => {
                 gender: TEST_USER.gender,
                 dobIso: TEST_USER.dob.iso,
               });
-              await signup.submitNHSForm();
+              if (ACTIVE_CONDITION.journeyType === "private") {
+                await signup.submitPrivatePatientInfoForm();
+              } else {
+                await signup.submitNHSForm();
+              }
               await signup.handlePDSResult();
+              break;
+            }
+
+            const hasEmail = await page
+              .locator('input[name="email"], input[type="email"]')
+              .first()
+              .isVisible()
+              .catch(() => false);
+
+            if (hasEmail) {
+              await signup.fillContactDetails(TEST_USER.email, TEST_USER.phone);
+              await signup.submitAndBook();
+              await page.waitForTimeout(3_000);
             }
             break;
           }

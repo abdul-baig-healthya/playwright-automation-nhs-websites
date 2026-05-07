@@ -12,6 +12,7 @@ export const TEST_USER = {
   firstName: "John",
   lastName: "Smith",
   postcode: "SW1A 1AA",
+  genderValue: "male",
   email: "lloyd.p2@yopmail.com",
   phone: "447467059973",
   payment: {
@@ -36,8 +37,8 @@ export const CONDITION_CATALOG: Record<ConditionJourneyType, string> = {
  */
 export const ACTIVE_CONDITION = {
   // journeyType: "nhs" as ConditionJourneyType,
-  // journeyType: "private" as ConditionJourneyType,
-  journeyType: "lifestyle" as ConditionJourneyType,
+  journeyType: "private" as ConditionJourneyType,
+  // journeyType: "lifestyle" as ConditionJourneyType,
 };
 
 export function getActiveConditionName(): string {

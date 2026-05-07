@@ -41,6 +41,18 @@ export class SignupPage {
       .first();
   }
 
+  private getPatientInfoScope() {
+    return this.page
+      .locator(
+        [
+          'form:has(input[name="first_name"])',
+          'div:has(input[name="first_name"])',
+          ':text("Patient Information")',
+        ].join(", "),
+      )
+      .first();
+  }
+
   /** Wait for the NHS PDS identity form to be visible. */
   async waitForPage() {
     await this.page.waitForLoadState("domcontentloaded");
@@ -67,8 +79,8 @@ export class SignupPage {
     firstName: string;
     lastName: string;
     postcode: string;
-    gender: "male" | "female"; // kept in signature for API compat, not used
-    dobIso: string; // kept in signature for API compat, not used
+    gender: "male" | "female";
+    dobIso: string;
   }) {
     const firstNameInput = this.page
       .locator('input[name="first_name"]')
@@ -84,16 +96,225 @@ export class SignupPage {
     const postcodeInput = this.page.locator('input[name="postcode"]').first();
     await postcodeInput.clear();
     await postcodeInput.fill(data.postcode);
+
+    await this.fillDobAndGenderIfRequired(data.gender, data.dobIso);
+    await this.waitForSignupValidationToClear();
   }
 
-  /**
-   * Click the "Check Records" submit button on the NHS PDS form.
-   */
-  async submitNHSForm() {
+  private async fillDobAndGenderIfRequired(
+    gender: "male" | "female",
+    dobIso: string,
+  ) {
+    const [yyyy, mm, dd] = dobIso.split("-");
+    const day = dd ?? "01";
+    const month = mm ?? "01";
+    const year = yyyy ?? "1990";
+
+    const scope = this.getPatientInfoScope();
+    const dobContainer = scope
+      .locator(
+        [
+          'div:has-text("Date of birth")',
+          'label:has-text("Date of birth")',
+          ':text("Date of birth")',
+        ].join(", "),
+      )
+      .first();
+
+    const labeledInputs = dobContainer.locator(
+      'input[placeholder="DD"], input[placeholder="MM"], input[placeholder="YYYY"]',
+    );
+
+    const hasLabeledTriplet = (await labeledInputs.count().catch(() => 0)) >= 3;
+
+    const dobDay = hasLabeledTriplet
+      ? labeledInputs.nth(0)
+      : await this.getFirstVisibleIn(
+          scope,
+          'input[placeholder="DD"], input[name*="day"], input[id*="day"]',
+        );
+    const dobMonth = hasLabeledTriplet
+      ? labeledInputs.nth(1)
+      : await this.getFirstVisibleIn(
+          scope,
+          'input[placeholder="MM"], input[name*="month"], input[id*="month"]',
+        );
+    const dobYear = hasLabeledTriplet
+      ? labeledInputs.nth(2)
+      : await this.getFirstVisibleIn(
+          scope,
+          'input[placeholder="YYYY"], input[name*="year"], input[id*="year"]',
+        );
+
+    const hasDobInputs =
+      (await dobDay.isVisible({ timeout: 500 }).catch(() => false)) ||
+      (await dobMonth.isVisible({ timeout: 500 }).catch(() => false)) ||
+      (await dobYear.isVisible({ timeout: 500 }).catch(() => false));
+
+    if (hasDobInputs) {
+      await this.fillDobPart(dobDay, day, "DD");
+      await this.fillDobPart(dobMonth, month, "MM");
+      await this.fillDobPart(dobYear, year, "YYYY");
+      const [vDay, vMonth, vYear] = await Promise.all([
+        dobDay.inputValue().catch(() => ""),
+        dobMonth.inputValue().catch(() => ""),
+        dobYear.inputValue().catch(() => ""),
+      ]);
+      console.log(
+        `[SignupPage] DOB filled if required: ${vDay}/${vMonth}/${vYear}`,
+      );
+
+      // Retry once if any part did not stick in the active form controls.
+      if (vDay.trim() !== day || vMonth.trim() !== month || vYear.trim() !== year) {
+        console.log("[SignupPage] DOB mismatch after first fill — retrying once");
+        await this.fillDobPart(dobDay, day, "DD");
+        await this.fillDobPart(dobMonth, month, "MM");
+        await this.fillDobPart(dobYear, year, "YYYY");
+      }
+    } else {
+      const dobSpans = scope.locator(
+        'span[contenteditable="true"][data-placeholder], span.date-span[contenteditable="true"]',
+      );
+      const spanCount = await dobSpans.count().catch(() => 0);
+      if (spanCount >= 3) {
+        await this.fillDobSpan(dobSpans.nth(0), day);
+        await this.fillDobSpan(dobSpans.nth(1), month);
+        await this.fillDobSpan(dobSpans.nth(2), year);
+        console.log(
+          `[SignupPage] DOB filled via contenteditable spans: ${day}/${month}/${year}`,
+        );
+      }
+    }
+
+    const genderLabel = gender === "male" ? "Male" : "Female";
+    const genderTargets = scope.locator(
+      [
+        `label:has-text("${genderLabel}")`,
+        `[role="radio"]:has-text("${genderLabel}")`,
+        `input[type="radio"][value="${gender}"]`,
+        `input[type="radio"][id="${gender}"]`,
+      ].join(", "),
+    );
+
+    const genderVisible = await genderTargets
+      .first()
+      .isVisible({ timeout: 500 })
+      .catch(() => false);
+    if (genderVisible) {
+      await genderTargets
+        .first()
+        .click({ force: true })
+        .catch(async () => {
+          await genderTargets.first().evaluate((el: HTMLElement) => el.click());
+        });
+      console.log(`[SignupPage] Gender selected if required: ${genderLabel}`);
+    }
+
+    const dobStillInvalid = await this.page
+      .locator(':text("Enter valid date of birth"), :text("Date of birth is required")')
+      .first()
+      .isVisible({ timeout: 300 })
+      .catch(() => false);
+    if (dobStillInvalid) {
+      console.log("[SignupPage] DOB validation still visible after fill");
+    }
+
+    const genderStillInvalid = await this.page
+      .locator(':text("Gender is required")')
+      .first()
+      .isVisible({ timeout: 300 })
+      .catch(() => false);
+    if (genderStillInvalid) {
+      const fallbackGender = scope
+        .locator(`label:has-text("${genderLabel}"), [role="radio"]:has-text("${genderLabel}")`)
+        .first();
+      if (await fallbackGender.isVisible().catch(() => false)) {
+        await fallbackGender.click({ force: true }).catch(() => {});
+      }
+    }
+  }
+
+  private async fillDobPart(
+    locator: import("@playwright/test").Locator,
+    value: string,
+    label: "DD" | "MM" | "YYYY",
+  ) {
+    const visible = await locator.isVisible({ timeout: 500 }).catch(() => false);
+    if (!visible) return;
+
+    await locator.scrollIntoViewIfNeeded().catch(() => {});
+    await locator.click({ force: true }).catch(() => {});
+    await locator.press("Control+a").catch(() => {});
+    await locator.press("Meta+a").catch(() => {});
+    await locator.press("Backspace").catch(() => {});
+    await locator.fill("").catch(() => {});
+    await locator.type(value, { delay: 60 }).catch(async () => {
+      await locator.fill(value);
+    });
+    await locator
+      .evaluate((el: HTMLInputElement, v: string) => {
+        el.value = v;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        el.dispatchEvent(new Event("blur", { bubbles: true }));
+      }, value)
+      .catch(() => {});
+    await locator.press("Tab").catch(() => {});
+    await this.page.waitForTimeout(120);
+
+    const finalValue = await locator.inputValue().catch(() => "");
+    console.log(`[SignupPage] DOB ${label} value: "${finalValue}"`);
+  }
+
+  private async getFirstVisible(selector: string) {
+    const candidates = this.page.locator(selector);
+    const count = await candidates.count().catch(() => 0);
+    for (let i = 0; i < count; i++) {
+      const candidate = candidates.nth(i);
+      const visible = await candidate.isVisible({ timeout: 200 }).catch(() => false);
+      if (visible) return candidate;
+    }
+    return candidates.first();
+  }
+
+  private async getFirstVisibleIn(
+    scope: import("@playwright/test").Locator,
+    selector: string,
+  ) {
+    const candidates = scope.locator(selector);
+    const count = await candidates.count().catch(() => 0);
+    for (let i = 0; i < count; i++) {
+      const candidate = candidates.nth(i);
+      const visible = await candidate
+        .isVisible({ timeout: 200 })
+        .catch(() => false);
+      if (visible) return candidate;
+    }
+    return candidates.first();
+  }
+
+  private async fillDobSpan(
+    locator: import("@playwright/test").Locator,
+    value: string,
+  ) {
+    await locator.scrollIntoViewIfNeeded().catch(() => {});
+    await locator.click({ force: true }).catch(() => {});
+    await locator.evaluate((el: HTMLElement, v: string) => {
+      el.textContent = "";
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.textContent = v;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      el.dispatchEvent(new Event("blur", { bubbles: true }));
+    }, value);
+    await this.page.waitForTimeout(100);
+  }
+
+  private async clickPatientInfoSubmitButton() {
     const submitBtn = this.page
       .locator(
         [
-          'button:has-text("Check Records")',
+          'button:has-text("Check Records"):visible',
           'button:has-text("Continue")',
           'button:has-text("Check")',
           'button[type="submit"]',
@@ -101,8 +322,87 @@ export class SignupPage {
       )
       .first();
 
-    await submitBtn.waitFor({ state: "visible" });
-    await submitBtn.click();
+    await submitBtn.waitFor({ state: "visible", timeout: 15_000 });
+    await submitBtn.scrollIntoViewIfNeeded().catch(() => {});
+
+    // Mimic manual interaction to finalize field-level validation.
+    await this.page.keyboard.press("Tab").catch(() => {});
+    await this.page.waitForTimeout(200);
+    await this.waitForSignupValidationToClear();
+
+    let enabled = false;
+    for (let i = 0; i < 8; i++) {
+      enabled = await submitBtn.isEnabled().catch(() => false);
+      if (enabled) break;
+      await this.page.waitForTimeout(300);
+    }
+    console.log(`[SignupPage] Check Records button enabled: ${enabled}`);
+
+    const normalClicked = await submitBtn
+      .click({ timeout: 2_500 })
+      .then(() => true)
+      .catch(() => false);
+    if (normalClicked) return;
+
+    const forceClicked = await submitBtn
+      .click({ force: true, timeout: 2_500 })
+      .then(() => true)
+      .catch(() => false);
+    if (forceClicked) return;
+
+    const box = await submitBtn.boundingBox().catch(() => null);
+    if (box) {
+      await this.page.mouse.click(
+        box.x + box.width / 2,
+        box.y + box.height / 2,
+      );
+      return;
+    }
+
+    await submitBtn.evaluate((el: HTMLElement) => el.click());
+  }
+
+  /**
+   * Click the "Check Records" submit button on the NHS PDS form (shingles path).
+   */
+  async submitNHSForm() {
+    await this.clickPatientInfoSubmitButton();
+  }
+
+  /**
+   * Click the "Check Records" submit button on private patient-info form
+   * (weight-management path).
+   */
+  async submitPrivatePatientInfoForm() {
+    await this.clickPatientInfoSubmitButton();
+  }
+
+  private async waitForSignupValidationToClear() {
+    const dobError = this.page
+      .locator(':text("Enter valid date of birth"), :text("Date of birth is required")')
+      .first();
+    const genderError = this.page.locator(':text("Gender is required")').first();
+
+    for (let i = 0; i < 12; i++) {
+      const hasDobError = await dobError
+        .isVisible({ timeout: 120 })
+        .catch(() => false);
+      const hasGenderError = await genderError
+        .isVisible({ timeout: 120 })
+        .catch(() => false);
+      if (!hasDobError && !hasGenderError) return;
+
+      await this.page.keyboard.press("Tab").catch(() => {});
+      await this.page.waitForTimeout(180);
+    }
+
+    const hasDobError = await dobError.isVisible({ timeout: 120 }).catch(() => false);
+    const hasGenderError = await genderError
+      .isVisible({ timeout: 120 })
+      .catch(() => false);
+    console.log(
+      `[SignupPage] Validation still visible before submit: dob=${hasDobError}, gender=${hasGenderError}`,
+    );
   }
 
   /**

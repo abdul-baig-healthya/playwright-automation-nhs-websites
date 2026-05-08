@@ -31,7 +31,7 @@ export class SignupPage {
     return this.page
       .locator(
         [
-          '.ant-modal-content:has(input.PhoneInputInput)',
+          ".ant-modal-content:has(input.PhoneInputInput)",
           '.ant-modal-content:has(input[name="email"])',
           '[role="dialog"]:has(input.PhoneInputInput)',
           '[role="dialog"]:has(input[name="email"])',
@@ -165,8 +165,14 @@ export class SignupPage {
       );
 
       // Retry once if any part did not stick in the active form controls.
-      if (vDay.trim() !== day || vMonth.trim() !== month || vYear.trim() !== year) {
-        console.log("[SignupPage] DOB mismatch after first fill — retrying once");
+      if (
+        vDay.trim() !== day ||
+        vMonth.trim() !== month ||
+        vYear.trim() !== year
+      ) {
+        console.log(
+          "[SignupPage] DOB mismatch after first fill — retrying once",
+        );
         await this.fillDobPart(dobDay, day, "DD");
         await this.fillDobPart(dobMonth, month, "MM");
         await this.fillDobPart(dobYear, year, "YYYY");
@@ -211,7 +217,9 @@ export class SignupPage {
     }
 
     const dobStillInvalid = await this.page
-      .locator(':text("Enter valid date of birth"), :text("Date of birth is required")')
+      .locator(
+        ':text("Enter valid date of birth"), :text("Date of birth is required")',
+      )
       .first()
       .isVisible({ timeout: 300 })
       .catch(() => false);
@@ -226,7 +234,9 @@ export class SignupPage {
       .catch(() => false);
     if (genderStillInvalid) {
       const fallbackGender = scope
-        .locator(`label:has-text("${genderLabel}"), [role="radio"]:has-text("${genderLabel}")`)
+        .locator(
+          `label:has-text("${genderLabel}"), [role="radio"]:has-text("${genderLabel}")`,
+        )
         .first();
       if (await fallbackGender.isVisible().catch(() => false)) {
         await fallbackGender.click({ force: true }).catch(() => {});
@@ -239,7 +249,9 @@ export class SignupPage {
     value: string,
     label: "DD" | "MM" | "YYYY",
   ) {
-    const visible = await locator.isVisible({ timeout: 500 }).catch(() => false);
+    const visible = await locator
+      .isVisible({ timeout: 500 })
+      .catch(() => false);
     if (!visible) return;
 
     await locator.scrollIntoViewIfNeeded().catch(() => {});
@@ -271,7 +283,9 @@ export class SignupPage {
     const count = await candidates.count().catch(() => 0);
     for (let i = 0; i < count; i++) {
       const candidate = candidates.nth(i);
-      const visible = await candidate.isVisible({ timeout: 200 }).catch(() => false);
+      const visible = await candidate
+        .isVisible({ timeout: 200 })
+        .catch(() => false);
       if (visible) return candidate;
     }
     return candidates.first();
@@ -379,9 +393,13 @@ export class SignupPage {
 
   private async waitForSignupValidationToClear() {
     const dobError = this.page
-      .locator(':text("Enter valid date of birth"), :text("Date of birth is required")')
+      .locator(
+        ':text("Enter valid date of birth"), :text("Date of birth is required")',
+      )
       .first();
-    const genderError = this.page.locator(':text("Gender is required")').first();
+    const genderError = this.page
+      .locator(':text("Gender is required")')
+      .first();
 
     for (let i = 0; i < 12; i++) {
       const hasDobError = await dobError
@@ -396,7 +414,9 @@ export class SignupPage {
       await this.page.waitForTimeout(180);
     }
 
-    const hasDobError = await dobError.isVisible({ timeout: 120 }).catch(() => false);
+    const hasDobError = await dobError
+      .isVisible({ timeout: 120 })
+      .catch(() => false);
     const hasGenderError = await genderError
       .isVisible({ timeout: 120 })
       .catch(() => false);
@@ -533,13 +553,35 @@ export class SignupPage {
     console.log(`[SignupPage] Email filled: "${email}"`);
 
     // ── Confirm email ────────────────────────────────────────────────────────
-    const confirmEmailInput = scope.locator('input[name="confirmEmail"]').first();
+    const confirmEmailInput = scope
+      .locator('input[name="confirmEmail"]')
+      .first();
     if (await confirmEmailInput.isVisible().catch(() => false)) {
       await confirmEmailInput.click();
       await confirmEmailInput.clear();
       await confirmEmailInput.fill(email);
       await confirmEmailInput.press("Tab");
       console.log("[SignupPage] Confirm-email filled");
+    }
+
+    // ── Guardian name ────────────────────────────────────────────────────────
+    const guardianInput = scope
+      .locator(
+        [
+          'input[name="guardianName"]',
+          'input[placeholder*="Guardian"]',
+          'input[placeholder*="guardian"]',
+        ].join(", "),
+      )
+      .first();
+
+    if (await guardianInput.isVisible().catch(() => false)) {
+      await guardianInput.click();
+      await guardianInput.clear();
+      await guardianInput.fill("Tonny stark");
+      await guardianInput.press("Tab");
+
+      console.log("[SignupPage] Guardian name filled");
     }
 
     // Let Formik batch all setFieldValue calls and re-render
@@ -577,18 +619,24 @@ export class SignupPage {
           className: (el as HTMLElement).className || "",
         })),
       )
-      .catch(() => [] as Array<{
-        text: string;
-        type: string;
-        disabled: boolean;
-        className: string;
-      }>);
+      .catch(
+        () =>
+          [] as Array<{
+            text: string;
+            type: string;
+            disabled: boolean;
+            className: string;
+          }>,
+      );
     console.log(
       `[SignupPage] Scoped buttons: ${JSON.stringify(scopeButtons.slice(0, 8))}`,
     );
 
     for (const selector of submitCandidates) {
-      const candidate = scope.locator(selector).filter({ hasText: /confirm|continue|book appointment/i }).first();
+      const candidate = scope
+        .locator(selector)
+        .filter({ hasText: /confirm|continue|book appointment/i })
+        .first();
       const genericCandidate =
         selector === "button" ? scope.locator(selector).first() : candidate;
       const target = selector === "button" ? genericCandidate : candidate;
@@ -615,7 +663,9 @@ export class SignupPage {
     if (!isVisible) {
       const form = scope.locator("form").first();
       if (await form.isVisible().catch(() => false)) {
-        console.log("[SignupPage] No scoped button found — trying form.requestSubmit()");
+        console.log(
+          "[SignupPage] No scoped button found — trying form.requestSubmit()",
+        );
         await form.evaluate((el: HTMLFormElement) => el.requestSubmit());
         await this.page.waitForTimeout(1500);
       }
@@ -681,7 +731,9 @@ export class SignupPage {
         .waitForURL((url) => url.href !== currentUrl, { timeout: 20_000 })
         .catch(() => {}),
       this.page
-        .locator(".appointment-type-radio-group, .rota-slot, button:has-text(\"Book Now\")")
+        .locator(
+          '.appointment-type-radio-group, .rota-slot, button:has-text("Book Now")',
+        )
         .first()
         .waitFor({ state: "visible", timeout: 20_000 })
         .catch(() => {}),
@@ -695,7 +747,9 @@ export class SignupPage {
     console.log(`[SignupPage] URL after submit: ${this.page.url()}`);
 
     let stillOnSignup = await scope
-      .locator('input[name="email"], input[name="first_name"], input.PhoneInputInput')
+      .locator(
+        'input[name="email"], input[name="first_name"], input.PhoneInputInput',
+      )
       .first()
       .isVisible()
       .catch(() => false);
@@ -713,7 +767,7 @@ export class SignupPage {
             .catch(() => {}),
           this.page
             .locator(
-              ".appointment-type-radio-group, .rota-slot, button:has-text(\"Book Now\")",
+              '.appointment-type-radio-group, .rota-slot, button:has-text("Book Now")',
             )
             .first()
             .waitFor({ state: "visible", timeout: 10_000 })
@@ -751,7 +805,7 @@ export class SignupPage {
               .catch(() => {}),
             this.page
               .locator(
-                ".appointment-type-radio-group, .rota-slot, button:has-text(\"Book Now\")",
+                '.appointment-type-radio-group, .rota-slot, button:has-text("Book Now")',
               )
               .first()
               .waitFor({ state: "visible", timeout: 10_000 })
@@ -790,19 +844,23 @@ export class SignupPage {
   async isBookingConfirmed(): Promise<boolean> {
     await this.page.waitForTimeout(2000);
     const indicators = [
-      'text="Booking confirmed"',
-      'text="Appointment confirmed"',
-      'text="Thank you"',
-      'text="Successfully booked"',
-      'text="Your appointment"',
+      ':has-text("Booking Confirmed")',
+      ':has-text("booking confirmed")',
+      ':has-text("Appointment Confirmed")',
+      ':has-text("appointment confirmed")',
+      ':has-text("Thank you")',
+      ':has-text("Successfully booked")',
+      ':has-text("Your appointment")',
       '[class*="success"]',
       '[class*="confirmation"]',
+      '[class*="BookingAppointmentSuccess"]',
     ];
     for (const sel of indicators) {
       if (
         await this.page
           .locator(sel)
-          .isVisible()
+          .first()
+          .isVisible({ timeout: 1000 })
           .catch(() => false)
       ) {
         return true;

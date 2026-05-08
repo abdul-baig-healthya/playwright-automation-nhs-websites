@@ -3,17 +3,18 @@ export const TEST_USER = {
   dob: {
     day: "01",
     month: "01",
-    year: "1990",
+    year: "2026",
     /** ISO format used by Ant Design DatePicker */
-    iso: "1990-01-01",
+    iso: "2026-01-01",
     /** Display format: DD/MM/YYYY */
-    display: "01/01/1990",
+    display: "01/01/2026",
   },
   firstName: "John",
   lastName: "Smith",
   postcode: "SW1A 1AA",
   genderValue: "male",
   email: "lloyd.p2@yopmail.com",
+  guardianName: "Tonny stark",
   phone: "447467059973",
   payment: {
     cardholderName: "Jhon Smith",
@@ -36,8 +37,8 @@ export const CONDITION_CATALOG: Record<ConditionJourneyType, string> = {
  * Keep only one active line uncommented.
  */
 export const ACTIVE_CONDITION = {
-  // journeyType: "nhs" as ConditionJourneyType,
-  journeyType: "private" as ConditionJourneyType,
+  journeyType: "nhs" as ConditionJourneyType,
+  // journeyType: "private" as ConditionJourneyType,
   // journeyType: "lifestyle" as ConditionJourneyType,
 };
 

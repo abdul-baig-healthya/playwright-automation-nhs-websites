@@ -307,6 +307,10 @@ export class BookingPage {
       ".appointment-type-radio-group",
       ".rota-slot",
       'button:has-text("Book Now")',
+      'button:has-text("Continue to Payment")',
+      'button:has-text("Continue to payment")',
+      'button:has-text("Continue To Payment")',
+      'button:has-text("Continue to Payement")',
       ':text("Appointment type")',
     ];
     for (const sel of indicators) {

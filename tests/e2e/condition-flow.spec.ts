@@ -38,13 +38,14 @@ async function detectCurrentStep(page: Page): Promise<JourneyStep> {
 
   // 1. Success / confirmation state (highest priority)
   const successIndicators = [
-    ':text("Booking Confirmed")',
-    ':text("booking confirmed")',
-    ':text("Appointment Confirmed")',
-    ':text("appointment confirmed")',
-    ':text("Thank you for booking")',
-    ':text("You can safely close")',
-    ':text("Successfully booked")',
+    ':has-text("Booking Confirmed")',
+    ':has-text("booking confirmed")',
+    ':has-text("Appointment Confirmed")',
+    ':has-text("appointment confirmed")',
+    ':has-text("Thank you for booking")',
+    ':has-text("You can safely close")',
+    ':has-text("Successfully booked")',
+    ':has-text("Booking confirmed")',
     '[class*="BookingAppointmentSuccess"]',
     '[class*="booking-appointment-success"]',
   ];
@@ -52,7 +53,25 @@ async function detectCurrentStep(page: Page): Promise<JourneyStep> {
     return "success";
   }
 
-  // 2.5 Payment step
+  // 2. Booking step (Prioritize over payment if "Continue to Payment" button is present)
+  const bookingIndicators = [
+    ".appointment-type-radio-group",
+    ".rota-slot",
+    'button:has-text("Book Now")',
+    'button:has-text("Continue to Payment")',
+    'button:has-text("Continue to payment")',
+    'button:has-text("Continue To Payment")',
+    'button:has-text("Continue to Payement")',
+    ':text("Appointment type")',
+    ':text("Book your appointment")',
+    ':text("Schedule your appointment")',
+    ':text("Select appointment session type")',
+  ];
+  if (await hasVisibleIndicator(bookingIndicators)) {
+    return "appointment_booking";
+  }
+
+  // 3. Payment step
   const paymentIndicators = [
     ':text("Complete your payment")',
     ':text("Enter your card details here")',
@@ -66,8 +85,6 @@ async function detectCurrentStep(page: Page): Promise<JourneyStep> {
     ':text("Token fee")',
     'button:has-text("Pay £")',
     'button:has-text("Pay")',
-    '[class*="payment"]',
-    '[id*="payment"]',
   ];
   if (await hasVisibleIndicator(paymentIndicators)) {
     return "payment";
@@ -79,19 +96,6 @@ async function detectCurrentStep(page: Page): Promise<JourneyStep> {
     !(await hasVisibleIndicator(successIndicators))
   ) {
     return "payment";
-  }
-
-  // 3. Booking step
-  const bookingIndicators = [
-    ".appointment-type-radio-group",
-    ".rota-slot",
-    'button:has-text("Book Now")',
-    ':text("Appointment type")',
-    ':text("Book your appointment")',
-    ':text("Schedule your appointment")',
-  ];
-  if (await hasVisibleIndicator(bookingIndicators)) {
-    return "appointment_booking";
   }
 
   // 4. Sign-up / contact-details step
@@ -311,19 +315,6 @@ test.describe("Conditions flow", () => {
           case "sign_up": {
             console.log("→ Handling sign-up step");
 
-            const hasEmail = await page
-              .locator('input[name="email"], input[type="email"]')
-              .first()
-              .isVisible()
-              .catch(() => false);
-
-            if (hasEmail) {
-              await signup.fillContactDetails(TEST_USER.email, TEST_USER.phone);
-              await signup.submitAndBook();
-              await page.waitForTimeout(3_000);
-              break;
-            }
-
             const hasNHSForm = await page
               .locator('input[name="first_name"]')
               .isVisible()
@@ -338,8 +329,25 @@ test.describe("Conditions flow", () => {
                 gender: TEST_USER.gender,
                 dobIso: TEST_USER.dob.iso,
               });
-              await signup.submitNHSForm();
+              if (ACTIVE_CONDITION.journeyType === "private") {
+                await signup.submitPrivatePatientInfoForm();
+              } else {
+                await signup.submitNHSForm();
+              }
               await signup.handlePDSResult();
+              break;
+            }
+
+            const hasEmail = await page
+              .locator('input[name="email"], input[type="email"]')
+              .first()
+              .isVisible()
+              .catch(() => false);
+
+            if (hasEmail) {
+              await signup.fillContactDetails(TEST_USER.email, TEST_USER.phone);
+              await signup.submitAndBook();
+              await page.waitForTimeout(3_000);
             }
             break;
           }

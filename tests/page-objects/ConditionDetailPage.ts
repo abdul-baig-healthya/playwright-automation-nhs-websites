@@ -42,7 +42,10 @@ export class ConditionDetailPage {
       'button:has-text("Check Eligibility")',
       'a:has-text("Start Assessment")',
       'button:has-text("Start Assessment")',
+      'a:has-text("Start Assessment")',
+      'button:has-text("Start Assesment")',
       ':text("Take Assessment")',
+      ':text("Take Assesment")',
       ':text("Am I eligible for our pharmacy services?")',
       ':text("Am I eligible for NHS services?")',
       ':text("Check if your condition is covered")',
@@ -369,34 +372,69 @@ export class ConditionDetailPage {
    * If still not visible after eligibility form was submitted, logs helpful info.
    */
   async clickStartAssessment(): Promise<void> {
-    const selector =
-      'a:has-text("Start Assessment"), button:has-text("Start Assessment")';
+    const selector = [
+      'a:has-text("Start Assessment"):visible',
+      'button:has-text("Start Assessment"):visible',
+      'a:has-text("Start Assesment"):visible',
+      'button:has-text("Start Assesment"):visible',
+      'a:has-text("Take Assessment"):visible',
+      'button:has-text("Take Assessment"):visible',
+      'a:has-text("Take Assesment"):visible',
+      'button:has-text("Take Assesment"):visible',
+      'a:has-text("Start Consultation"):visible',
+      'button:has-text("Start Consultation"):visible',
+      'a:has-text("Continue"):visible',
+      'button:has-text("Continue"):visible',
+    ].join(", ");
 
     console.log("→ Waiting for Start Assessment button...");
 
-    const startBtn = this.page.locator(selector).first();
+    const startButtons = this.page.locator(selector);
+    const regexStartBtn = this.page
+      .locator("a,button,[role='button']")
+      .filter({
+        hasText:
+          /start\s*asses+ment|start\s*assessment|take\s*asses+ment|take\s*assessment|start\s*consultation/i,
+      })
+      .first();
 
-    // Wait with a helpful error if it times out
-    await startBtn
-      .waitFor({ state: "visible", timeout: 30_000 })
-      .catch(async () => {
-        await this.page
-          .screenshot({ path: "test-results/start-assessment-not-found.png" })
-          .catch(() => {});
-        const url = this.page.url();
-        const body = await this.page
-          .locator("body")
-          .textContent()
-          .catch(() => "");
-        throw new Error(
-          `"Start Assessment" button not visible after 30s.\n` +
-            `URL: ${url}\n` +
-            `Check screenshot: test-results/start-assessment-not-found.png\n` +
-            `Page text: ${body?.slice(0, 600)}`,
-        );
-      });
+    let startBtn: import("@playwright/test").Locator | null = null;
+    for (let i = 0; i < 30; i++) {
+      const count = await startButtons.count().catch(() => 0);
+      if (count > 0) {
+        startBtn = startButtons.first();
+        break;
+      }
 
-    await startBtn.scrollIntoViewIfNeeded();
+      const regexVisible = await regexStartBtn
+        .isVisible({ timeout: 300 })
+        .catch(() => false);
+      if (regexVisible) {
+        startBtn = regexStartBtn;
+        break;
+      }
+
+      await this.page.waitForTimeout(1000);
+    }
+
+    if (!startBtn) {
+      await this.page
+        .screenshot({ path: "test-results/start-assessment-not-found.png" })
+        .catch(() => {});
+      const url = this.page.url();
+      const body = await this.page
+        .locator("body")
+        .textContent()
+        .catch(() => "");
+      throw new Error(
+        `"Start Assessment" button not visible after 30s.\n` +
+          `URL: ${url}\n` +
+          `Check screenshot: test-results/start-assessment-not-found.png\n` +
+          `Page text: ${body?.slice(0, 600)}`,
+      );
+    }
+
+    await startBtn.scrollIntoViewIfNeeded().catch(() => {});
     const currentUrl = this.page.url();
     console.log(`→ Start Assessment visible. Clicking...`);
 
@@ -404,22 +442,82 @@ export class ConditionDetailPage {
       await startBtn.click({ timeout: 5_000 });
     } catch {
       try {
-        await startBtn.click({ force: true });
+        if (
+          await regexStartBtn.isVisible({ timeout: 500 }).catch(() => false)
+        ) {
+          await regexStartBtn.click({ force: true });
+        } else {
+          await startBtn.click({ force: true });
+        }
       } catch {
-        await startBtn.evaluate((el: HTMLElement) => el.click());
+        if (
+          await regexStartBtn.isVisible({ timeout: 500 }).catch(() => false)
+        ) {
+          await regexStartBtn.evaluate((el: HTMLElement) => el.click());
+        } else {
+          await startBtn.evaluate((el: HTMLElement) => el.click());
+        }
       }
     }
 
-    const navigated = await this.page
-      .waitForURL((url) => url.href !== currentUrl, { timeout: 5_000 })
-      .then(() => true)
-      .catch(() => false);
+    const movedToNextStep = await Promise.race([
+      this.page
+        .waitForURL((url) => url.href !== currentUrl, { timeout: 7_000 })
+        .then(() => true),
+      this.page
+        .locator(
+          [
+            ':text("Questionnaires")',
+            'input[name="first_name"]',
+            ".appointment-type-radio-group",
+            ".rota-slot",
+            ':text("Complete your payment")',
+            'button:has-text("Pay")',
+          ].join(", "),
+        )
+        .first()
+        .waitFor({ state: "visible", timeout: 7_000 })
+        .then(() => true),
+    ]).catch(() => false);
 
-    if (!navigated) {
-      await startBtn.evaluate((el: HTMLElement) => el.click());
-      await this.page
-        .waitForURL((url) => url.href !== currentUrl, { timeout: 8_000 })
-        .catch(() => {});
+    if (!movedToNextStep) {
+      // Private condition pages may have sticky/overlay CTA; click by text fallback.
+      const fallbackCta = this.page
+        .locator('a,button,[role="button"],span')
+        .filter({
+          hasText:
+            /Start Assessment|Take Assessment|Start Consultation|Continue/i,
+        })
+        .first();
+
+      if (await fallbackCta.isVisible().catch(() => false)) {
+        await fallbackCta.scrollIntoViewIfNeeded().catch(() => {});
+        await fallbackCta.click({ force: true }).catch(async () => {
+          await fallbackCta.evaluate((el: HTMLElement) => el.click());
+        });
+      } else {
+        await startBtn.evaluate((el: HTMLElement) => el.click());
+      }
+
+      await Promise.race([
+        this.page
+          .waitForURL((url) => url.href !== currentUrl, { timeout: 10_000 })
+          .catch(() => {}),
+        this.page
+          .locator(
+            [
+              ':text("Questionnaires")',
+              'input[name="first_name"]',
+              ".appointment-type-radio-group",
+              ".rota-slot",
+              ':text("Complete your payment")',
+              'button:has-text("Pay")',
+            ].join(", "),
+          )
+          .first()
+          .waitFor({ state: "visible", timeout: 10_000 })
+          .catch(() => {}),
+      ]);
     }
 
     console.log(`→ Navigated to: ${this.page.url()}`);

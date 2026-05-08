@@ -38,6 +38,40 @@ export class PaymentPage {
       .first();
   }
 
+  async isPaymentPage(): Promise<boolean> {
+    const indicators = await Promise.all([
+      this.page
+        .locator('input[placeholder*="Name on card"]')
+        .first()
+        .isVisible()
+        .catch(() => false),
+
+      this.page
+        .locator("iframe")
+        .first()
+        .isVisible()
+        .catch(() => false),
+
+      this.page
+        .locator(':text("Enter your card details here")')
+        .first()
+        .isVisible()
+        .catch(() => false),
+
+      this.page
+        .locator(':text("Cardholder name")')
+        .first()
+        .isVisible()
+        .catch(() => false),
+    ]);
+
+    const matched = indicators.filter(Boolean).length;
+
+    console.log(`[PaymentPage] Payment indicators matched: ${matched}`);
+
+    return matched >= 2;
+  }
+
   /**
    * Single fast probe that detects which scenario we are in.
    * Runs all checks in parallel — no serial timeout chains.
@@ -302,18 +336,117 @@ export class PaymentPage {
     expiryDate: string;
     securityCode: string;
   }) {
-    await this.fillField(
-      this.cardholderInput(),
-      data.cardholderName,
-      "cardholder",
-    );
-    await this.fillField(this.cardNumberInput(), data.cardNumber, "cardNumber");
-    await this.fillField(this.expiryInput(), data.expiryDate, "expiryDate");
-    await this.fillField(
-      this.securityCodeInput(),
-      data.securityCode,
-      "securityCode",
-    );
+    console.log("[PaymentPage] Filling manual payment form");
+
+    // ─────────────────────────────────────────────────────
+    // Cardholder Name
+    // ─────────────────────────────────────────────────────
+    const cardholder = this.page
+      .locator(
+        [
+          'input[placeholder*="Name on card"]',
+          'input[autocomplete="cc-name"]',
+          'input[type="text"]',
+        ].join(", "),
+      )
+      .first();
+
+    if (await cardholder.isVisible().catch(() => false)) {
+      await cardholder.click();
+      await cardholder.press("Control+a").catch(() => {});
+      await cardholder.fill(data.cardholderName);
+
+      console.log("[PaymentPage] Cardholder filled");
+    }
+
+    // ─────────────────────────────────────────────────────
+    // Find ALL iframes
+    // ─────────────────────────────────────────────────────
+    const frames = this.page.frames();
+
+    console.log(`[PaymentPage] Total frames: ${frames.length}`);
+
+    for (const frame of frames) {
+      try {
+        // Debug visible inputs inside frame
+        const inputs = await frame.locator("input").count();
+
+        console.log(
+          `[PaymentPage] Frame URL: ${frame.url()} | inputs: ${inputs}`,
+        );
+
+        // ── Card Number ─────────────────────
+        const cardNumberInput = frame
+          .locator(
+            [
+              'input[name="cardnumber"]',
+              'input[autocomplete="cc-number"]',
+              'input[inputmode="numeric"]',
+              'input[placeholder*="1234"]',
+              'input[placeholder*="Card number"]',
+            ].join(", "),
+          )
+          .first();
+
+        if (await cardNumberInput.isVisible().catch(() => false)) {
+          await cardNumberInput.click();
+          await cardNumberInput.fill(data.cardNumber);
+
+          console.log("[PaymentPage] Card number filled");
+        }
+
+        // ── Expiry ──────────────────────────
+        const expiryInput = frame
+          .locator(
+            [
+              'input[name="exp-date"]',
+              'input[autocomplete="cc-exp"]',
+              'input[placeholder*="MM"]',
+              'input[placeholder*="MM/YY"]',
+            ].join(", "),
+          )
+          .first();
+
+        if (await expiryInput.isVisible().catch(() => false)) {
+          await expiryInput.click();
+          await expiryInput.fill(data.expiryDate);
+
+          console.log("[PaymentPage] Expiry filled");
+        }
+
+        // ── CVV ─────────────────────────────
+        const cvvInput = frame
+          .locator(
+            [
+              'input[name="cvc"]',
+              'input[autocomplete="cc-csc"]',
+              'input[placeholder*="CVV"]',
+              'input[placeholder*="CVC"]',
+            ].join(", "),
+          )
+          .first();
+
+        if (await cvvInput.isVisible().catch(() => false)) {
+          await cvvInput.click();
+          await cvvInput.fill(data.securityCode);
+
+          console.log("[PaymentPage] CVV filled");
+        }
+      } catch (err) {
+        console.log("[PaymentPage] Frame inspection failed");
+      }
+    }
+
+    // Wait for validation to clear
+    await this.page.waitForTimeout(1500);
+
+    // Debug validation errors
+    const errors = await this.page
+      .locator('[class*="error"], .text-red-500')
+      .allTextContents()
+      .catch(() => []);
+
+    console.log(`[PaymentPage] Validation errors: ${errors.join(" | ")}`);
   }
 
   private async hasPreFilledPaymentDetails(): Promise<boolean> {
@@ -524,71 +657,38 @@ export class PaymentPage {
     expiryDate: string;
     securityCode: string;
   }) {
-    if (this.hasClickedPay) {
-      if (await this.isPayButtonVisible()) {
-        console.log(
-          "[PaymentPage] Pay flag true but button still visible — retrying Pay click",
-        );
-        await this.clickPay();
-      } else {
-        console.log(
-          "[PaymentPage] Pay already clicked — handling challenge/success only",
-        );
-        await this.handle3DSChallenge();
-      }
-      return;
-    }
+    await this.waitForPage();
 
-    if (await this.isChallengeVisible()) {
-      await this.handle3DSChallenge();
-      return;
-    }
-
-    const payButtonAlreadyVisible = await this.page
-      .locator('button:has-text("Pay £"), button:has-text("Pay")')
+    // ── Scenario 1: Saved/Masked card available ────────────
+    const savedCardVisible = await this.page
+      .locator(':text("saved card"), :text("****")')
       .first()
-      .isVisible({ timeout: 500 })
+      .isVisible()
       .catch(() => false);
 
-    if (!payButtonAlreadyVisible) {
-      await this.waitForPage();
-    }
+    if (savedCardVisible) {
+      console.log("[PaymentPage] Saved card detected");
 
-    const scenario = await this.detectPaymentScenario();
-    console.log(`[PaymentPage] Detected scenario: ${scenario}`);
-
-    if (scenario === "saved_card_selected") {
       await this.ensureSavedCardSelected();
       await this.clickPay();
       return;
     }
 
-    if (scenario === "unknown") {
-      await this.waitForPage();
-      const scenarioAfterWait = await this.detectPaymentScenario();
-      console.log(
-        `[PaymentPage] Scenario after waitForPage: ${scenarioAfterWait}`,
-      );
-      if (scenarioAfterWait === "saved_card_selected") {
-        await this.ensureSavedCardSelected();
-        await this.clickPay();
-        return;
-      }
-    }
+    // ── Scenario 2: Manual card form available ─────────────
+    const manualCardFormVisible = await this.page
+      .locator(':text("Enter your card details here")')
+      .first()
+      .isVisible()
+      .catch(() => false);
 
-    if (!(await this.hasManualPaymentFields())) {
-      await this.ensureSavedCardSelected();
-      await this.clickPay();
-      return;
-    }
+    if (manualCardFormVisible) {
+      console.log("[PaymentPage] Manual payment form detected");
 
-    const prefilled = await this.hasPreFilledPaymentDetails();
-    if (!prefilled) {
       await this.fillPaymentDetails(data);
-    } else {
-      console.log("[PaymentPage] Payment form already filled — skipping");
+      await this.clickPay();
+      return;
     }
 
-    await this.clickPay();
+    console.log("[PaymentPage] No payment scenario detected");
   }
 }

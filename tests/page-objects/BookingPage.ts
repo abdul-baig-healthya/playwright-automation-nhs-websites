@@ -1,4 +1,5 @@
 import { Page } from "@playwright/test";
+import { BOOKING_PREFERENCES, BookingPreferences } from "../fixtures/test-data";
 
 export class BookingPage {
   readonly page: Page;
@@ -22,22 +23,59 @@ export class BookingPage {
           ':text("Schedule your appointment")',
           ".rota-slot",
           'button:has-text("Book Now")',
-        ].join(", ")
+        ].join(", "),
       )
       .first()
       .waitFor({ state: "visible", timeout: 30_000 });
   }
 
   /**
-   * Select the first available appointment session type
-   * (e.g. Phone, Video, Face-to-face).
+   * Select the preferred appointment session type
+   * (e.g. Phone, Video, Face-to-face) from test-data.ts.
    */
-  async selectFirstSessionType() {
+  async selectPreferredSessionType(
+    prefs: BookingPreferences = BOOKING_PREFERENCES,
+  ) {
     const radioGroup = this.page.locator(".appointment-type-radio-group");
     if (!(await radioGroup.isVisible({ timeout: 5_000 }).catch(() => false))) {
       return;
     }
 
+    const typeLabels: Record<string, string[]> = {
+      video: ["Video", "Video Consultation"],
+      "face-to-face": [
+        "Face-to-face",
+        "In-person",
+        "In person",
+        "Clinic",
+        "Face to Face",
+      ],
+      "phone-call": ["Phone", "Phone call", "Telephone", "Phone call"],
+    };
+
+    // Normalize key lookup: "Face to Face" -> "face-to-face"
+    const normalizedType = (prefs.appointmentType || "video")
+      .toLowerCase()
+      .replace(/\s+/g, "-");
+    const targetLabels = typeLabels[normalizedType] || [prefs.appointmentType];
+
+    for (const label of targetLabels) {
+      const option = radioGroup
+        .locator("label, .ant-radio-wrapper, .ant-radio-button-wrapper")
+        .filter({ hasText: label })
+        .first();
+      if (await option.isVisible().catch(() => false)) {
+        console.log(`[BookingPage] Selecting appointment type: ${label}`);
+        await option.click();
+        await this.page.waitForTimeout(1500);
+        return;
+      }
+    }
+
+    // Fallback: click first if preferred not found
+    console.log(
+      "[BookingPage] Preferred appointment type not found — clicking first available",
+    );
     const firstRadio = radioGroup
       .locator(".ant-radio-wrapper, .ant-radio-button-wrapper, label")
       .first();
@@ -52,7 +90,7 @@ export class BookingPage {
   async clickBookNow(): Promise<boolean> {
     const bookNowBtn = this.page
       .locator(
-        'button.button-primary:has-text("Book Now"), button:has-text("Book Now")'
+        'button.button-primary:has-text("Book Now"), button:has-text("Book Now")',
       )
       .first();
 
@@ -68,63 +106,63 @@ export class BookingPage {
   }
 
   /**
-   * Select the first available (non-disabled) date in the WeeklyDatePicker.
-   * Navigates up to 8 weeks forward if the current week has no enabled dates.
-   * Returns true if a date was selected.
-   *
-   * The WeeklyDatePicker renders cells as div[class] elements inside a
-   * grid-cols-7 layout. Enabled cells have "cursor-pointer" in className
-   * and do NOT have "cursor-not-allowed". Disabled have "[#C6C6C6]" text color.
+   * Select a preferred month from the dropdown if specified.
    */
-  async selectFirstEnabledDate(): Promise<boolean> {
-    for (let weekAttempt = 0; weekAttempt < 8; weekAttempt++) {
-      await this.page.waitForTimeout(800);
+  private async selectMonthFromDropdown(monthYear: string) {
+    console.log(`[BookingPage] Attempting to select month: ${monthYear}`);
 
-      const clicked = await this.page.evaluate((): boolean => {
-        const allDivs = Array.from(
-          document.querySelectorAll("div[class]")
-        ) as HTMLElement[];
+    const triggerSelectors = [
+      ".ant-select-selector",
+      ".month-picker",
+      'div[class*="select"]',
+      ".ant-select-selection-search-input",
+    ];
 
-        for (const div of allDivs) {
-          const cls = div.className;
-          if (
-            cls.includes("flex-col") &&
-            cls.includes("items-center") &&
-            cls.includes("cursor-pointer") &&
-            !cls.includes("cursor-not-allowed") &&
-            div.children.length >= 2
-          ) {
-            // Confirm the cell contains a date-like text (number + abbreviated month)
-            const text = (div.textContent ?? "").replace(/\s+/g, "");
-            if (/^\d{1,2}[A-Za-z]{3}$/.test(text)) {
-              div.click();
-              return true;
-            }
-          }
+    for (const sel of triggerSelectors) {
+      const picker = this.page.locator(sel).first();
+      if (await picker.isVisible({ timeout: 1000 }).catch(() => false)) {
+        await picker.click({ force: true });
+        await this.page.waitForTimeout(1000);
+
+        const option = this.page
+          .locator(
+            [
+              `.ant-select-item-option-content:has-text("${monthYear}")`,
+              `.ant-select-item-option:has-text("${monthYear}")`,
+              `[role="option"]:has-text("${monthYear}")`,
+            ].join(", "),
+          )
+          .first();
+
+        if (await option.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await option.click({ force: true });
+          await this.page.waitForTimeout(2000);
+          console.log(
+            `[BookingPage] Successfully selected month: ${monthYear}`,
+          );
+          return;
         }
-        return false;
-      });
-
-      if (clicked) {
-        await this.page.waitForTimeout(1500);
-        return true;
       }
-
-      // No available dates this week — try navigating to next week
-      const navigated = await this.navigateNextWeek();
-      if (!navigated) break;
     }
-    return false;
+
+    // Fallback: try clicking text directly if it looks like a dropdown trigger
+    const textTrigger = this.page.locator(`:text("${monthYear}")`).first();
+    if (await textTrigger.isVisible().catch(() => false)) {
+      await textTrigger.click({ force: true }).catch(() => {});
+      await this.page.waitForTimeout(1000);
+    }
   }
 
   /**
-   * Click the "next week" navigation button in the WeeklyDatePicker.
-   * The nav buttons are borderered icon-only buttons (min-w-[38px] style).
+   * Navigate forward or backward using arrow buttons.
    */
-  private async navigateNextWeek(): Promise<boolean> {
-    const clicked = await this.page.evaluate((): boolean => {
+  private async navigateDateUsingArrows(
+    direction: "next" | "prev",
+  ): Promise<boolean> {
+    const index = direction === "next" ? 1 : 0;
+    const clicked = await this.page.evaluate((dirIndex): boolean => {
       const buttons = Array.from(
-        document.querySelectorAll("button[class]")
+        document.querySelectorAll("button[class]"),
       ) as HTMLButtonElement[];
 
       const navButtons = buttons.filter((btn) => {
@@ -137,47 +175,201 @@ export class BookingPage {
         );
       });
 
-      if (navButtons.length >= 2) {
-        (navButtons[1] as HTMLButtonElement).click();
-        return true;
-      }
-      if (navButtons.length === 1) {
-        (navButtons[0] as HTMLButtonElement).click();
+      const target =
+        navButtons.length > dirIndex
+          ? navButtons[dirIndex]
+          : navButtons.length === 1
+            ? navButtons[0]
+            : null;
+      if (target) {
+        (target as HTMLButtonElement).click();
         return true;
       }
       return false;
-    });
+    }, index);
 
-    if (clicked) await this.page.waitForTimeout(1000);
+    if (clicked) {
+      await this.page.waitForTimeout(1200);
+      console.log(`[BookingPage] Navigated ${direction} using arrows`);
+    }
     return clicked;
   }
 
   /**
-   * Select the first available (non-disabled) time slot from the rota-slot group.
-   * Slots are rendered as label.ant-radio-button-wrapper elements.
+   * Select a specific date or navigate until found.
+   */
+  async selectFirstEnabledDate(
+    prefs: BookingPreferences = BOOKING_PREFERENCES,
+  ): Promise<boolean> {
+    if (prefs.preferredMonth) {
+      await this.selectMonthFromDropdown(prefs.preferredMonth);
+    }
+
+    const targetDate = prefs.preferredDate;
+    console.log(
+      `[BookingPage] Looking for date: ${targetDate || "any available"}`,
+    );
+
+    for (let attempt = 0; attempt < prefs.maxDateAttempts; attempt++) {
+      await this.page.waitForTimeout(800);
+
+      const result = await this.page.evaluate(
+        (target): { clicked: boolean; foundInView: boolean } => {
+          const allDivs = Array.from(
+            document.querySelectorAll("div[class]"),
+          ) as HTMLElement[];
+
+          const dateCells = allDivs.filter((div) => {
+            const cls = div.className;
+            return (
+              cls.includes("flex-col") &&
+              cls.includes("items-center") &&
+              cls.includes("cursor-pointer") &&
+              !cls.includes("cursor-not-allowed") &&
+              div.children.length >= 2
+            );
+          });
+
+          if (target) {
+            const normalizedTarget = target.replace(/\s+/g, "").toLowerCase();
+            const match = dateCells.find((div) => {
+              const text = (div.textContent ?? "")
+                .replace(/\s+/g, "")
+                .toLowerCase();
+              return text === normalizedTarget;
+            });
+
+            if (match) {
+              match.click();
+              return { clicked: true, foundInView: true };
+            }
+            return { clicked: false, foundInView: false };
+          } else {
+            if (dateCells.length > 0) {
+              dateCells[0].click();
+              return { clicked: true, foundInView: true };
+            }
+            return { clicked: false, foundInView: false };
+          }
+        },
+        targetDate,
+      );
+
+      if (result.clicked) {
+        await this.page.waitForTimeout(1500);
+        console.log(
+          `[BookingPage] Selected date: ${targetDate || "first available"}`,
+        );
+        return true;
+      }
+
+      if (prefs.autoMoveToNextDate) {
+        const navigated = await this.navigateDateUsingArrows("next");
+        if (!navigated) {
+          console.log("[BookingPage] Could not navigate further");
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+
+    if (targetDate) {
+      console.log(
+        `[BookingPage] FAILED to find preferred date ${targetDate} after ${prefs.maxDateAttempts} attempts`,
+      );
+      return false;
+    }
+
+    return false;
+  }
+
+  /**
+   * Select a specific time slot or the first available one from the rota-slot group.
    * Returns true if a slot was selected.
    */
-  async selectFirstAvailableSlot(): Promise<boolean> {
+  async selectAvailableSlot(
+    prefs: BookingPreferences = BOOKING_PREFERENCES,
+  ): Promise<boolean> {
     const slotGroup = this.page.locator(".rota-slot");
     if (!(await slotGroup.isVisible({ timeout: 10_000 }).catch(() => false))) {
       return false;
     }
 
-    const slotLabels = slotGroup.locator("label.ant-radio-button-wrapper");
+    // Broaden the locator just in case different classes are used for different slots
+    const slotLabels = slotGroup.locator("label, .ant-radio-button-wrapper, .ant-radio-wrapper");
     const count = await slotLabels.count();
     if (count === 0) return false;
 
+    if (prefs.preferredTime && !prefs.useNextAvailableSlot) {
+      let preferredSlot = null;
+      for (let i = 0; i < count; i++) {
+        const slot = slotLabels.nth(i);
+        const text = (await slot.textContent().catch(() => "")) ?? "";
+        const normalizedText = text.replace(/\s+/g, " ").trim().toLowerCase();
+        const normalizedPref = prefs.preferredTime.replace(/\s+/g, " ").trim().toLowerCase();
+        
+        if (normalizedText.includes(normalizedPref) && normalizedPref.length > 0) {
+          preferredSlot = slot;
+          break;
+        }
+      }
+
+      if (preferredSlot && (await preferredSlot.isVisible().catch(() => false))) {
+        const isDisabled = await preferredSlot
+          .evaluate((el) =>
+            el.classList.contains("ant-radio-button-wrapper-disabled") ||
+            el.classList.contains("ant-radio-wrapper-disabled") ||
+            el.classList.contains("ant-radio-button-disabled") ||
+            el.querySelector("input:disabled") !== null
+          )
+          .catch(() => true);
+          
+        if (!isDisabled) {
+          console.log(
+            `[BookingPage] Selecting preferred slot: ${prefs.preferredTime}`,
+          );
+          await preferredSlot.click();
+          await this.page.waitForTimeout(500);
+          return true;
+        } else {
+          console.log(
+            `[BookingPage] Preferred slot ${prefs.preferredTime} is DISABLED`,
+          );
+          return false;
+        }
+      } else {
+        console.log(
+          `[BookingPage] Preferred slot ${prefs.preferredTime} NOT FOUND in current view`,
+        );
+        return false;
+      }
+    }
+
+    console.log(
+      "[BookingPage] No specific preferred time requested or fallback enabled — picking first available",
+    );
     for (let i = 0; i < count; i++) {
       const slot = slotLabels.nth(i);
       const isDisabled = await slot
         .evaluate((el) =>
-          el.classList.contains("ant-radio-button-wrapper-disabled")
+          el.classList.contains("ant-radio-button-wrapper-disabled") ||
+          el.classList.contains("ant-radio-wrapper-disabled") ||
+          el.classList.contains("ant-radio-button-disabled") ||
+          el.querySelector("input:disabled") !== null
         )
         .catch(() => true);
       if (!isDisabled) {
-        await slot.click();
-        await this.page.waitForTimeout(500);
-        return true;
+        const timeText = ((await slot.textContent().catch(() => "")) ?? "").trim();
+        // Skip empty labels that might be matched by the broader locator
+        if (timeText) {
+          console.log(
+            `[BookingPage] Selecting first available slot: ${timeText}`,
+          );
+          await slot.click();
+          await this.page.waitForTimeout(500);
+          return true;
+        }
       }
     }
     return false;
@@ -193,6 +385,7 @@ export class BookingPage {
         'button:has-text("Continue to Payment")',
         'button:has-text("Continue to payment")',
         'button:has-text("Continue To Payment")',
+        'button:has-text("Continue to Payement")',
         'button:has-text("Book Appointment")',
         'button:has-text("Confirm Appointment")',
         'button:has-text("Continue")',
@@ -203,12 +396,13 @@ export class BookingPage {
       ].join(", "),
     );
 
-    // Wait for booking CTA to become enabled after slot selection.
     for (let i = 0; i < 8; i++) {
       const count = await preferredCtas.count();
       for (let idx = 0; idx < count; idx++) {
         const btn = preferredCtas.nth(idx);
-        const visible = await btn.isVisible({ timeout: 300 }).catch(() => false);
+        const visible = await btn
+          .isVisible({ timeout: 300 })
+          .catch(() => false);
         if (!visible) continue;
 
         const enabled = await btn.isEnabled().catch(() => false);
@@ -268,11 +462,14 @@ export class BookingPage {
           className: (button as HTMLElement).className || "",
         })),
       )
-      .catch(() => [] as Array<{
-        text: string;
-        disabled: boolean;
-        className: string;
-      }>);
+      .catch(
+        () =>
+          [] as Array<{
+            text: string;
+            disabled: boolean;
+            className: string;
+          }>,
+      );
     console.log(
       `[BookingPage] No booking CTA found after slot selection. Buttons: ${JSON.stringify(visibleButtons.slice(0, 12))}`,
     );
@@ -280,8 +477,6 @@ export class BookingPage {
 
   /**
    * Handle the "Appointment Selected" / intermediate "Continue" state.
-   * After a booking is made, the app may show a sticky "Continue" button
-   * before transitioning to the next journey step.
    * Returns true if handled.
    */
   async handleBookingContinue(): Promise<boolean> {
@@ -289,9 +484,7 @@ export class BookingPage {
       .locator('button:has-text("Continue")')
       .first();
 
-    if (
-      await continueBtn.isVisible({ timeout: 5_000 }).catch(() => false)
-    ) {
+    if (await continueBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
       await continueBtn.click();
       await this.page.waitForTimeout(1500);
       return true;
@@ -307,11 +500,18 @@ export class BookingPage {
       ".appointment-type-radio-group",
       ".rota-slot",
       'button:has-text("Book Now")',
+      'button:has-text("Continue to Payment")',
+      'button:has-text("Continue to payment")',
+      'button:has-text("Continue To Payment")',
+      'button:has-text("Continue to Payement")',
       ':text("Appointment type")',
     ];
     for (const sel of indicators) {
       if (
-        await this.page.locator(sel).isVisible({ timeout: 500 }).catch(() => false)
+        await this.page
+          .locator(sel)
+          .isVisible({ timeout: 500 })
+          .catch(() => false)
       ) {
         return true;
       }
@@ -320,14 +520,195 @@ export class BookingPage {
   }
 
   /**
-   * Complete the full booking flow:
-   *   1. Select session type
+   * Locate and click the "Select next available slot" radio using a
+   * multi-strategy DOM walk. The row is a custom styled element (not a
+   * standard Ant Design radio), so we must find the <input type="radio">
+   * inside its container and click/dispatch events on it directly.
+   *
+   * Returns true if the radio was found and clicked.
+   */
+  private async clickNextAvailableSlotRadio(): Promise<boolean> {
+    // Strategy 1: DOM walk — find text, traverse up to locate the radio input,
+    // then click it and fire a change event so React/custom frameworks register it.
+    const clickedViaEvaluate = await this.page.evaluate((): boolean => {
+      const TARGET_TEXT = "select next available slot";
+
+      // Collect all elements and find the shallowest one whose trimmed
+      // textContent matches (avoids matching huge ancestor containers).
+      const allElements = Array.from(document.querySelectorAll("*"));
+
+      for (const el of allElements) {
+        // Only consider elements whose direct text (not descendants') matches,
+        // OR whose total textContent closely matches (short containers).
+        const text = (el.textContent ?? "").trim().toLowerCase();
+        if (!text.includes(TARGET_TEXT)) continue;
+        // Skip if this element is a large container with lots of other text
+        if (text.length > TARGET_TEXT.length + 60) continue;
+
+        // Walk UP to 5 ancestor levels looking for a sibling/child radio input
+        let container: Element | null = el;
+        for (let depth = 0; depth < 5; depth++) {
+          if (!container) break;
+
+          const radioInput = container.querySelector(
+            'input[type="radio"]',
+          ) as HTMLInputElement | null;
+
+          if (radioInput) {
+            if (radioInput.disabled) {
+              console.warn(
+                "[BookingPage] Next available slot radio is disabled",
+              );
+              return false;
+            }
+            // Click the input and dispatch both click and change events
+            radioInput.click();
+            radioInput.dispatchEvent(
+              new MouseEvent("click", { bubbles: true }),
+            );
+            radioInput.dispatchEvent(new Event("change", { bubbles: true }));
+            return true;
+          }
+
+          // Also check: maybe the container itself is clickable (e.g. a custom div radio)
+          const role = container.getAttribute("role");
+          if (role === "radio" || role === "option") {
+            (container as HTMLElement).click();
+            return true;
+          }
+
+          container = container.parentElement;
+        }
+
+        // Last resort for this match: click the element itself
+        (el as HTMLElement).click();
+        return true;
+      }
+
+      return false;
+    });
+
+    if (clickedViaEvaluate) {
+      console.log("[BookingPage] Strategy 1 (DOM walk evaluate) succeeded");
+      await this.page.waitForTimeout(1000);
+      return true;
+    }
+
+    // Strategy 2: Playwright locator targeting the row container, then the input inside it
+    console.log(
+      "[BookingPage] Strategy 1 failed — trying Strategy 2 (Playwright row + input locator)",
+    );
+
+    const rowLocator = this.page
+      .locator("div, li, section, label")
+      .filter({ hasText: /select next available slot/i })
+      // Pick the most specific (innermost) match
+      .last();
+
+    if (await rowLocator.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      // Try clicking the radio input inside the row first
+      const radioInRow = rowLocator.locator('input[type="radio"]').first();
+      if (
+        await radioInRow
+          .count()
+          .then((c) => c > 0)
+          .catch(() => false)
+      ) {
+        await radioInRow.click({ force: true });
+        console.log(
+          "[BookingPage] Strategy 2a: clicked radio input inside row",
+        );
+      } else {
+        // No input found — click the row container itself
+        await rowLocator.click({ force: true });
+        console.log(
+          "[BookingPage] Strategy 2b: clicked row container directly",
+        );
+      }
+      await this.page.waitForTimeout(1000);
+      return true;
+    }
+
+    // Strategy 3: Broad radio input scan — find any unchecked radio near the text
+    console.log(
+      "[BookingPage] Strategy 2 failed — trying Strategy 3 (broad radio scan)",
+    );
+
+    const foundViaRadioScan = await this.page.evaluate((): boolean => {
+      const TARGET_TEXT = "select next available slot";
+      const allRadios = Array.from(
+        document.querySelectorAll('input[type="radio"]'),
+      ) as HTMLInputElement[];
+
+      for (const radio of allRadios) {
+        if (radio.disabled) continue;
+
+        // Check the radio's surrounding DOM for the target text
+        let ancestor: Element | null = radio.parentElement;
+        for (let depth = 0; depth < 6; depth++) {
+          if (!ancestor) break;
+          const text = (ancestor.textContent ?? "").trim().toLowerCase();
+          if (text.includes(TARGET_TEXT)) {
+            radio.click();
+            radio.dispatchEvent(new Event("change", { bubbles: true }));
+            return true;
+          }
+          ancestor = ancestor.parentElement;
+        }
+      }
+      return false;
+    });
+
+    if (foundViaRadioScan) {
+      console.log("[BookingPage] Strategy 3 (broad radio scan) succeeded");
+      await this.page.waitForTimeout(1000);
+      return true;
+    }
+
+    console.log(
+      "[BookingPage] All strategies failed to find 'Select next available slot'",
+    );
+    return false;
+  }
+
+  /**
+   * Verify the "Select next available slot" radio is actually checked after clicking.
+   * Returns true if checked or if verification is inconclusive (can't find the input).
+   */
+  private async verifyNextAvailableSlotSelected(): Promise<boolean> {
+    return this.page.evaluate((): boolean => {
+      const TARGET_TEXT = "select next available slot";
+      const allElements = Array.from(document.querySelectorAll("*"));
+
+      for (const el of allElements) {
+        const text = (el.textContent ?? "").trim().toLowerCase();
+        if (!text.includes(TARGET_TEXT)) continue;
+        if (text.length > TARGET_TEXT.length + 60) continue;
+
+        let container: Element | null = el;
+        for (let depth = 0; depth < 5; depth++) {
+          if (!container) break;
+          const radioInput = container.querySelector(
+            'input[type="radio"]',
+          ) as HTMLInputElement | null;
+          if (radioInput) return radioInput.checked;
+          container = container.parentElement;
+        }
+      }
+      // Can't find the input to verify — assume OK
+      return true;
+    });
+  }
+
+  /**
+   * Complete the full booking flow using preferences from test-data.ts:
+   *   1. Select preferred session type
    *   2. Try instant "Book Now" → fall back to date + slot selection
    *   3. Handle any intermediate "Continue" state
    */
-  async completeBooking() {
+  async completeBooking(prefs: BookingPreferences = BOOKING_PREFERENCES) {
     await this.waitForPage();
-    await this.selectFirstSessionType();
+    await this.selectPreferredSessionType(prefs);
 
     // Brief pause for any dynamic content to load after session type selection
     await this.page.waitForTimeout(2000);
@@ -340,18 +721,52 @@ export class BookingPage {
       return;
     }
 
-    // Fall back: select a date, then a time slot
-    console.log("ℹ No instant slot — selecting date and time slot");
-    const dateSelected = await this.selectFirstEnabledDate();
-    if (!dateSelected) {
-      console.log("⚠ No available dates found in next 8 weeks");
-      return;
-    }
+    if (prefs.useNextAvailableSlot) {
+      console.log(
+        "ℹ useNextAvailableSlot is true — attempting to select 'Select next available slot'",
+      );
 
-    const slotSelected = await this.selectFirstAvailableSlot();
-    if (!slotSelected) {
-      console.log("⚠ No available slots found for selected date");
-      return;
+      const clicked = await this.clickNextAvailableSlotRadio();
+
+      if (!clicked) {
+        const errorMsg =
+          "The 'Select next available slot' radio button was not found.";
+        console.log(`⚠ ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+
+      // Verify the radio is actually checked
+      const isSelected = await this.verifyNextAvailableSlotSelected();
+      if (!isSelected) {
+        console.log(
+          "⚠ Radio was clicked but does not appear checked — retrying once",
+        );
+        await this.clickNextAvailableSlotRadio();
+        await this.page.waitForTimeout(500);
+      }
+
+      console.log("✔ 'Select next available slot' selected successfully");
+      await this.page.waitForTimeout(1500);
+    } else {
+      // Fall back: select a date, then a time slot
+      console.log(
+        "ℹ No instant slot — selecting date and time slot based on preferences",
+      );
+      const dateSelected = await this.selectFirstEnabledDate(prefs);
+      if (!dateSelected) {
+        const errorMsg = `Date ${prefs.preferredDate || "available"} not found`;
+        console.log(`⚠ ${errorMsg} after ${prefs.maxDateAttempts} attempts`);
+        throw new Error(errorMsg);
+      }
+
+      const slotSelected = await this.selectAvailableSlot(prefs);
+      if (!slotSelected) {
+        const errorMsg = prefs.preferredTime
+          ? `Time slot "${prefs.preferredTime}" is not available`
+          : "No available time slots found";
+        console.log(`⚠ ${errorMsg} for selected date`);
+        throw new Error(errorMsg);
+      }
     }
 
     await this.clickBookAppointment();

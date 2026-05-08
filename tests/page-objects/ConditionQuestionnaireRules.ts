@@ -56,8 +56,7 @@ export const WEIGHT_MANAGEMENT_RULES: ConditionQuestionRule[] = [
     control: "radio",
   },
   {
-    questionPattern:
-      /Have you recently lost more than one stone (6.3kg) in a three-month period\?/i,
+    questionPattern: /lost more than one stone.*6\.3kg.*three-month period/i,
     answerText: "Yes",
     control: "radio",
   },
@@ -84,8 +83,9 @@ export const WEIGHT_MANAGEMENT_RULES: ConditionQuestionRule[] = [
     control: "radio",
   },
   {
-    questionPattern: /Do you have any of these \? \(Tick all that apply\)/i,
-    answerText: "None of the above",
+    questionPattern:
+      /Do you have any of these.*conditions.*Tick all that apply/i,
+    answerText: "History of pancreatitis",
     control: "checkbox",
   },
   {
@@ -96,8 +96,8 @@ export const WEIGHT_MANAGEMENT_RULES: ConditionQuestionRule[] = [
   },
   {
     questionPattern:
-      /Have you attempted any of the following\? \(Select all that apply\)/i,
-    answerText: "None of the above",
+      /Have you attempted any of the following.*select all that apply/i,
+    answerText: "Exercise program",
     control: "checkbox",
   },
   {

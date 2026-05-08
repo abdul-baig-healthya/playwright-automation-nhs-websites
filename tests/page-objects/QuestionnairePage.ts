@@ -13,7 +13,6 @@ export class QuestionnairePage {
   readonly page: Page;
   private readonly MAX_QUESTIONS = 50;
   private readonly answeredRuleKeys = new Set<string>();
-  private conditionRuleCursor = 0;
 
   constructor(page: Page) {
     this.page = page;
@@ -57,7 +56,7 @@ export class QuestionnairePage {
    */
   async answerAllQuestions() {
     for (let step = 0; step < this.MAX_QUESTIONS; step++) {
-      await this.page.waitForTimeout(800); // brief pause for animations
+      await this.page.waitForTimeout(200); // brief pause for animations
 
       // Guard: once payment is visible, stop questionnaire handling immediately.
       if (await this.isOnPaymentPage()) {
@@ -72,12 +71,12 @@ export class QuestionnairePage {
         return;
       }
 
-      const answered = await this.answerCurrentQuestion();
+      let answered = await this.answerCurrentQuestion();
       const advanced = await this.progressQuestionnaire();
 
       if (!advanced && !answered) {
         // No question found and no button — might be loading or done
-        await this.page.waitForTimeout(1500);
+        await this.page.waitForTimeout(1000);
         if (await this.isOnSignupOrBookingPage()) return;
       }
     }
@@ -125,24 +124,44 @@ export class QuestionnairePage {
     ]);
   }
 
-  private async isRadioSelectionApplied(labelText: string): Promise<boolean> {
-    const selectedInput = this.page
-      .locator(
-        [
-          `label:has-text("${labelText}") input[type="radio"]`,
-          `input[type="radio"][value="${labelText}"]`,
-        ].join(", "),
-      )
-      .first();
+  private resolveScope(
+    customScope?: ReturnType<Page["locator"]>,
+  ): ReturnType<Page["locator"]> {
+    if (customScope) {
+      return customScope.first();
+    }
 
-    if (await selectedInput.count()) {
-      const checked = await selectedInput
+    // FIX:
+    // removed unstable .last()
+    // which caused stale DOM references
+    // during AntD rerenders
+    return this.getActiveQuestionScope();
+  }
+
+  private async isRadioSelectionApplied(
+    labelText: string,
+    customScope?: ReturnType<Page["locator"]>,
+  ): Promise<boolean> {
+    const scope = this.resolveScope(customScope);
+    const selectedInput = scope.locator(
+      [
+        `label:has-text("${labelText}") input[type="radio"]`,
+        `input[type="radio"][value="${labelText}"]`,
+        `input[type="radio"][aria-label="${labelText}"]`,
+      ].join(", "),
+    );
+    const inputCount = await selectedInput.count().catch(() => 0);
+    for (let i = 0; i < inputCount; i++) {
+      const input = selectedInput.nth(i);
+      const visible = await input.isVisible().catch(() => false);
+      if (!visible) continue;
+      const checked = await input
         .evaluate((el: HTMLInputElement) => el.checked)
         .catch(() => false);
       if (checked) return true;
     }
 
-    const ariaRadio = this.page
+    const ariaRadio = scope
       .locator(`[role="radio"]:has-text("${labelText}")`)
       .first();
     if (await ariaRadio.count()) {
@@ -151,7 +170,7 @@ export class QuestionnairePage {
         .catch(() => false);
     }
 
-    const antWrapper = this.page
+    const antWrapper = scope
       .locator(
         [
           `.ant-radio-wrapper:has-text("${labelText}")`,
@@ -176,15 +195,24 @@ export class QuestionnairePage {
     labelText: string,
     customScope?: ReturnType<Page["locator"]>,
   ): Promise<boolean> {
-    const scope = customScope ?? this.page;
+    const scope = this.resolveScope(customScope);
+    const escaped = labelText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const exactPattern = new RegExp(`^\\s*${escaped}\\s*$`, "i");
+    const shortAnswer = /^(yes|no|none|n\/a|true|false)$/i.test(
+      labelText.trim(),
+    );
+
     const possibleInputs = [
       `label:has-text("${labelText}") input[type="radio"]`,
       `input[type="radio"][value="${labelText}"]`,
       `input[type="radio"][aria-label="${labelText}"]`,
     ];
 
-    const radioInput = scope.locator(possibleInputs.join(", ")).first();
-    if (await radioInput.count()) {
+    const directInputs = scope.locator(possibleInputs.join(", "));
+    const directCount = await directInputs.count().catch(() => 0);
+    for (let i = 0; i < directCount; i++) {
+      const radioInput = directInputs.nth(i);
+      if (!(await radioInput.isVisible().catch(() => false))) continue;
       await radioInput.scrollIntoViewIfNeeded().catch(() => {});
       try {
         await radioInput.check({ force: true });
@@ -199,9 +227,7 @@ export class QuestionnairePage {
         });
       }
       await this.page.waitForTimeout(300);
-      const checked = await radioInput
-        .evaluate((el: HTMLInputElement) => el.checked)
-        .catch(() => false);
+      const checked = await this.isRadioSelectionApplied(labelText, scope);
       console.log(`[QuestionnairePage] Radio checked via input: ${checked}`);
       if (checked) return true;
     }
@@ -211,34 +237,187 @@ export class QuestionnairePage {
       `[role="radio"]:has-text("${labelText}")`,
       `.ant-radio-wrapper:has-text("${labelText}")`,
       `.ant-radio-button-wrapper:has-text("${labelText}")`,
-      `div:has-text("${labelText}")`,
     ];
 
     for (const selector of clickTargets) {
-      const option = scope.locator(selector).first();
+      let options = scope.locator(selector);
+      if (shortAnswer) {
+        options = options.filter({ hasText: exactPattern });
+      }
+      const count = await options.count().catch(() => 0);
+      for (let i = 0; i < count; i++) {
+        const option = options.nth(i);
+        if (!(await option.isVisible().catch(() => false))) continue;
+        const disabled = await option
+          .evaluate((el) => {
+            const htmlEl = el as HTMLElement;
+            return (
+              htmlEl.className.includes("disabled") ||
+              htmlEl.getAttribute("aria-disabled") === "true"
+            );
+          })
+          .catch(() => false);
+        if (disabled) continue;
+
+        const nestedInput = option.locator('input[type="radio"]').first();
+        if (await nestedInput.isVisible().catch(() => false)) {
+          await nestedInput.scrollIntoViewIfNeeded().catch(() => {});
+          await nestedInput.check({ force: true }).catch(async () => {
+            await nestedInput.click({ force: true });
+          });
+        } else {
+          await option.scrollIntoViewIfNeeded().catch(() => {});
+          await option.click({ force: true }).catch(async () => {
+            await option.evaluate((el: HTMLElement) => el.click());
+          });
+        }
+        await this.page.waitForTimeout(300);
+
+        const selected = await this.isRadioSelectionApplied(labelText, scope);
+        console.log(
+          `[QuestionnairePage] Radio checked after click on ${selector}[${i}]: ${selected}`,
+        );
+        if (selected) return true;
+      }
+    }
+
+    return false;
+  }
+
+  private async selectRadioByHeadingGroup(
+    heading: ReturnType<Page["locator"]>,
+    labelText: string,
+  ): Promise<boolean> {
+    const anchorRadio = heading
+      .locator("xpath=following::input[@type='radio'][1]")
+      .first();
+    if (!(await anchorRadio.count().catch(() => 0))) return false;
+
+    const groupName = await anchorRadio.getAttribute("name");
+    if (!groupName) return false;
+
+    const escaped = labelText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const exactPattern = new RegExp(`^\\s*${escaped}\\s*$`, "i");
+
+    const wrappers = this.page
+      .locator(
+        [
+          `label.ant-radio-wrapper:has(input[type="radio"][name="${groupName}"])`,
+          `.ant-radio-button-wrapper:has(input[type="radio"][name="${groupName}"])`,
+          `label:has(input[type="radio"][name="${groupName}"])`,
+        ].join(", "),
+      )
+      .filter({ hasText: exactPattern });
+
+    const count = await wrappers.count().catch(() => 0);
+    for (let i = 0; i < count; i++) {
+      const option = wrappers.nth(i);
       if (!(await option.isVisible().catch(() => false))) continue;
-      const disabled = await option
+      await option.scrollIntoViewIfNeeded().catch(() => {});
+      await option.click({ force: true }).catch(async () => {
+        await option.evaluate((el: HTMLElement) => el.click());
+      });
+      await this.page.waitForTimeout(250);
+
+      const checked = await this.page
+        .locator(`input[type="radio"][name="${groupName}"]:checked`)
+        .count()
+        .then((n) => n > 0)
+        .catch(() => false);
+      if (checked) return true;
+    }
+
+    return false;
+  }
+
+  private async selectRadioInQuestionWrapper(
+    questionPattern: RegExp,
+    answerText: string,
+  ): Promise<boolean> {
+    const wrappers = this.page.locator(".questionnaire-answer-wrapper").filter({
+      has: this.page
+        .locator(".questions.required-question, .questions")
+        .filter({ hasText: questionPattern }),
+    });
+
+    const wrapperCount = await wrappers.count().catch(() => 0);
+
+    for (let i = 0; i < wrapperCount; i++) {
+      const wrapper = wrappers.nth(i);
+
+      if (!(await wrapper.isVisible().catch(() => false))) {
+        continue;
+      }
+
+      // FIX:
+      // Use visible label/wrapper matching instead of input[value]
+      // because Ant Design radio groups often do not expose
+      // matching input values.
+      const radioOption = wrapper
+        .locator(
+          [
+            `label:has-text("${answerText}")`,
+            `.ant-radio-wrapper:has-text("${answerText}")`,
+            `.ant-radio-button-wrapper:has-text("${answerText}")`,
+            `[role="radio"]:has-text("${answerText}")`,
+          ].join(", "),
+        )
+        .first();
+
+      if (!(await radioOption.isVisible().catch(() => false))) {
+        continue;
+      }
+
+      // FIX:
+      // skip disabled radios
+      const disabled = await radioOption
         .evaluate((el) => {
           const htmlEl = el as HTMLElement;
+
           return (
             htmlEl.className.includes("disabled") ||
             htmlEl.getAttribute("aria-disabled") === "true"
           );
         })
         .catch(() => false);
-      if (disabled) continue;
 
-      await option.scrollIntoViewIfNeeded().catch(() => {});
-      await option.click({ force: true }).catch(async () => {
-        await option.evaluate((el: HTMLElement) => el.click());
+      if (disabled) {
+        continue;
+      }
+
+      await radioOption.scrollIntoViewIfNeeded().catch(() => {});
+
+      await radioOption.click({ force: true }).catch(async () => {
+        await radioOption.evaluate((el: HTMLElement) => el.click());
       });
-      await this.page.waitForTimeout(300);
 
-      const selected = await this.isRadioSelectionApplied(labelText);
+      // AntD state sync wait
+      await this.page.waitForTimeout(600);
+
+      // Verify checked state
+      let checked = await this.isRadioSelectionApplied(answerText, wrapper);
+
       console.log(
-        `[QuestionnairePage] Radio checked after click on ${selector}: ${selected}`,
+        `[QuestionnairePage] Radio "${answerText}" selected: ${checked}`,
       );
-      if (selected) return true;
+
+      if (checked) {
+        return true;
+      }
+
+      // IMPORTANT FIX:
+      // AntD sometimes updates selection late
+      await this.page.waitForTimeout(800);
+
+      checked = await this.isRadioSelectionApplied(answerText, wrapper);
+
+      console.log(
+        `[QuestionnairePage] Delayed verification for "${answerText}": ${checked}`,
+      );
+
+      if (checked) {
+        return true;
+      }
     }
 
     return false;
@@ -404,79 +583,113 @@ export class QuestionnairePage {
     labelText: string,
     customScope?: ReturnType<Page["locator"]>,
   ): Promise<boolean> {
-    const exact = await this.selectCheckboxByText(labelText, customScope);
-    if (exact) return true;
-
-    const normalized = labelText.replace(/\s+/g, "\\s*");
-    const pattern = new RegExp(normalized, "i");
     const scope = customScope ?? this.getActiveQuestionScope();
 
-    if (/^none of the above$/i.test(labelText.trim())) {
-      const exactNoneCandidates = scope
-        .locator(
-          [
-            "label",
-            '[role="checkbox"]',
-            ".ant-checkbox-wrapper",
-            "div",
-            "span",
-          ].join(", "),
-        )
-        .filter({ hasText: /^None of the above$/i });
-      const exactCount = await exactNoneCandidates.count().catch(() => 0);
-      for (let i = exactCount - 1; i >= 0; i--) {
-        const option = exactNoneCandidates.nth(i);
-        const visible = await option.isVisible().catch(() => false);
-        if (!visible) continue;
-        await option.scrollIntoViewIfNeeded().catch(() => {});
-        await option.click({ force: true }).catch(async () => {
-          await option.evaluate((el: HTMLElement) => el.click());
-        });
-        await this.page.waitForTimeout(350);
-        return true;
-      }
-    }
+    const escaped = labelText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-    const candidates = scope
+    const exactPattern = new RegExp(`^\\s*${escaped}\\s*$`, "i");
+
+    // IMPORTANT FIX:
+    // search ONLY inside current question scope
+    const checkboxWrappers = scope
       .locator(
         [
-          "label",
-          '[role="checkbox"]',
+          "label.ant-checkbox-wrapper",
           ".ant-checkbox-wrapper",
-          ".ant-radio-wrapper",
-          ".ant-radio-button-wrapper",
-          "div",
-          "span",
+          'label:has(input[type="checkbox"])',
+
+          // IMPORTANT:
+          // support separated checkbox rows
+          ".ant-row label",
+          ".ant-col label",
+
+          // fallback generic checkbox labels
+          "label:has(.ant-checkbox)",
         ].join(", "),
       )
-      .filter({ hasText: pattern });
-
-    const count = await candidates.count().catch(() => 0);
-    for (let i = count - 1; i >= 0; i--) {
-      const option = candidates.nth(i);
-      if (!(await option.isVisible().catch(() => false))) continue;
-      const isDisabled = await option
-        .evaluate((el) => {
-          const htmlEl = el as HTMLElement;
-          const ariaDisabled = htmlEl.getAttribute("aria-disabled") === "true";
-          const classDisabled =
-            htmlEl.className.includes("disabled") ||
-            htmlEl.className.includes("not-allowed");
-          const input = htmlEl.querySelector("input") as
-            | HTMLInputElement
-            | undefined;
-          const inputDisabled = input ? input.disabled : false;
-          return ariaDisabled || classDisabled || inputDisabled;
-        })
-        .catch(() => false);
-      if (isDisabled) continue;
-
-      await option.scrollIntoViewIfNeeded().catch(() => {});
-      await option.click({ force: true }).catch(async () => {
-        await option.evaluate((el: HTMLElement) => el.click());
+      .filter({
+        hasText: exactPattern,
       });
-      await this.page.waitForTimeout(350);
-      return true;
+
+    const count = await checkboxWrappers.count().catch(() => 0);
+
+    for (let i = 0; i < count; i++) {
+      const wrapper = checkboxWrappers.nth(i);
+
+      if (!(await wrapper.isVisible().catch(() => false))) {
+        continue;
+      }
+
+      const checkboxInput = wrapper.locator('input[type="checkbox"]').first();
+
+      // IMPORTANT FIX:
+      // custom checkbox square element
+      const checkboxVisual = wrapper
+        .locator(
+          [
+            ".ant-checkbox",
+            ".ant-checkbox-inner",
+            '[role="checkbox"]',
+            'span[class*="checkbox"]',
+          ].join(", "),
+        )
+        .first();
+
+      await wrapper.scrollIntoViewIfNeeded().catch(() => {});
+      await checkboxVisual.scrollIntoViewIfNeeded().catch(() => {});
+
+      await this.page.waitForTimeout(300);
+
+      if (await checkboxInput.count().catch(() => 0)) {
+        const alreadyChecked = await checkboxInput
+          .isChecked()
+          .catch(() => false);
+
+        if (!alreadyChecked) {
+          // IMPORTANT:
+          // click visual checkbox instead of hidden input
+          if (await checkboxVisual.isVisible().catch(() => false)) {
+            await checkboxVisual.click({ force: true }).catch(async () => {
+              await checkboxVisual.evaluate((el: HTMLElement) => el.click());
+            });
+          } else {
+            await checkboxInput.check({ force: true }).catch(async () => {
+              await checkboxInput.click({ force: true });
+            });
+          }
+        }
+
+        await this.page.waitForTimeout(700);
+
+        const checked = await checkboxInput.isChecked().catch(() => false);
+
+        console.log(
+          `[QuestionnairePage] Checkbox "${labelText}" checked via scoped visual click: ${checked}`,
+        );
+
+        if (checked) {
+          return true;
+        }
+      }
+
+      // fallback wrapper click
+      await wrapper.click({ force: true }).catch(async () => {
+        await wrapper.evaluate((el: HTMLElement) => el.click());
+      });
+
+      await this.page.waitForTimeout(500);
+
+      const checkedAfterClick = await checkboxInput
+        .isChecked()
+        .catch(() => false);
+
+      console.log(
+        `[QuestionnairePage] Checkbox "${labelText}" checked after wrapper click: ${checkedAfterClick}`,
+      );
+
+      if (checkedAfterClick) {
+        return true;
+      }
     }
 
     return false;
@@ -495,9 +708,48 @@ export class QuestionnairePage {
       .first();
   }
 
-  private getQuestionScopeForRule(pattern: RegExp) {
-    const active = this.getActiveQuestionScope();
-    return active.filter({ hasText: pattern }).first();
+  private getQuestionHeadingForRule(pattern: RegExp) {
+    return this.page
+      .locator(
+        [
+          ".questions.required-question",
+          ".questions",
+          ".question-title",
+          '[class*="question"]',
+          "p",
+          "h1, h2, h3, h4, h5, h6",
+        ].join(", "),
+      )
+      .filter({ hasText: pattern })
+      .first();
+  }
+
+  private async getQuestionScopeForRule(
+    pattern: RegExp,
+    control: "radio" | "checkbox",
+  ) {
+    const heading = this.getQuestionHeadingForRule(pattern);
+
+    const inputType = control === "checkbox" ? "checkbox" : "radio";
+
+    // IMPORTANT FIX:
+    // Use nearest questionnaire wrapper instead of ancestor
+    const wrapper = heading.locator(
+      `xpath=ancestor::*[
+      contains(@class,"questionnaire-answer-wrapper")
+      or contains(@class,"question-container")
+      or .//input[@type='${inputType}']
+    ][1]`,
+    );
+
+    if ((await wrapper.count().catch(() => 0)) > 0) {
+      return wrapper.first();
+    }
+
+    // fallback
+    return heading.locator(
+      `xpath=following::*[.//input[@type='${inputType}']][1]`,
+    );
   }
 
   private fuzzyRuleMatch(questionText: string, pattern: RegExp): boolean {
@@ -528,8 +780,17 @@ export class QuestionnairePage {
 
   private async answerCurrentQuestion(): Promise<boolean> {
     const activeCondition = getActiveConditionName().toLowerCase();
+
+    // IMPORTANT FIX:
+    // Process ALL visible rules in one pass.
+    // No cursor logic.
+    // No retry loop.
+    // No sequential mode.
     const handledByConditionRule = await this.answerByConditionRules();
+
     if (handledByConditionRule) {
+      console.log("[QuestionnairePage] Completed visible condition rules");
+
       return true;
     }
 
@@ -725,70 +986,108 @@ export class QuestionnairePage {
 
   private async answerByConditionRules(): Promise<boolean> {
     const activeCondition = getActiveConditionName().toLowerCase();
+
     const rules =
       activeCondition === "weight management"
         ? WEIGHT_MANAGEMENT_RULES
         : activeCondition === "shingles"
           ? SHINGLES_RULES
           : [];
-    if (rules.length === 0) return false;
 
-    // Strict sequence mode: answer exactly one expected rule at a time.
-    const expectedRule = rules[this.conditionRuleCursor];
-    if (!expectedRule) return false;
-    const expectedKey = `${expectedRule.questionPattern.source}__${expectedRule.answerText}`;
-    const scope = this.getQuestionScopeForRule(expectedRule.questionPattern);
-    const scopeText =
-      (await scope.textContent().catch(async () => {
-        return (await this.page.textContent("body").catch(() => "")) ?? "";
-      })) ?? "";
-
-    const matchedExpected =
-      expectedRule.questionPattern.test(scopeText) ||
-      this.fuzzyRuleMatch(scopeText, expectedRule.questionPattern);
-
-    if (matchedExpected) {
-      console.log(
-        `[QuestionnairePage] Sequence rule ${this.conditionRuleCursor + 1}/${rules.length} matched: ${expectedRule.questionPattern}`,
-      );
-      const answered =
-        expectedRule.control === "checkbox"
-          ? await this.selectCheckboxByTextFlexible(
-              expectedRule.answerText,
-              scope,
-            )
-          : await this.selectRadioByText(expectedRule.answerText, scope);
-
-      if (answered) {
-        this.answeredRuleKeys.add(expectedKey);
-        this.conditionRuleCursor += 1;
-        const prevText = scopeText.slice(0, 400);
-        await this.clickPrimaryButton().catch(() => false);
-        await this.page.waitForTimeout(700);
-        await this.page
-          .waitForFunction(
-            ({ oldText }) => {
-              const el =
-                document.querySelector(".question-container") ||
-                document.querySelector('[class*="question"]');
-              const txt = (
-                el?.textContent ||
-                document.body.textContent ||
-                ""
-              ).slice(0, 400);
-              return txt !== oldText;
-            },
-            { oldText: prevText },
-            { timeout: 4000 },
-          )
-          .catch(() => {});
-        return true;
-      }
-      // matched but not selected; stop here to avoid flickering fallback clicks
-      return true;
+    if (rules.length === 0) {
+      return false;
     }
 
-    return false;
+    let handledAnyRule = false;
+
+    // IMPORTANT:
+    // iterate ALL rules every pass
+    for (let index = 0; index < rules.length; index++) {
+      const rule = rules[index];
+
+      const ruleKey = `${index}__${rule.answerText}`;
+
+      // already answered
+      if (this.answeredRuleKeys.has(ruleKey)) {
+        continue;
+      }
+
+      const heading = this.getQuestionHeadingForRule(rule.questionPattern);
+
+      const visible = await heading.isVisible().catch(() => false);
+
+      if (!visible) {
+        continue;
+      }
+
+      const headingText = (await heading.textContent().catch(() => "")) ?? "";
+
+      const matched =
+        rule.questionPattern.test(headingText) ||
+        this.fuzzyRuleMatch(headingText, rule.questionPattern);
+
+      if (!matched) {
+        continue;
+      }
+
+      const scope = await this.getQuestionScopeForRule(
+        rule.questionPattern,
+        rule.control,
+      );
+
+      if (!(await scope.isVisible().catch(() => false))) {
+        continue;
+      }
+
+      console.log(
+        `[QuestionnairePage] Rule ${
+          index + 1
+        }/${rules.length} matched: ${rule.questionPattern}`,
+      );
+
+      let answered = false;
+
+      // CHECKBOX
+      if (rule.control === "checkbox") {
+        answered = await this.selectCheckboxByTextFlexible(
+          rule.answerText,
+          scope,
+        );
+      }
+
+      // RADIO
+      else {
+        answered =
+          (await this.selectRadioInQuestionWrapper(
+            rule.questionPattern,
+            rule.answerText,
+          )) ||
+          (await this.selectRadioByHeadingGroup(heading, rule.answerText)) ||
+          (await this.selectRadioByText(rule.answerText, scope));
+      }
+
+      // delayed AntD verification
+      if (!answered && rule.control === "radio") {
+        await this.page.waitForTimeout(800);
+
+        answered = await this.isRadioSelectionApplied(rule.answerText, scope);
+      }
+
+      if (answered) {
+        console.log(
+          `[QuestionnairePage] Rule ${index + 1} completed successfully`,
+        );
+
+        this.answeredRuleKeys.add(ruleKey);
+
+        handledAnyRule = true;
+
+        // allow rerender between rules
+        await this.page.waitForTimeout(400);
+      }
+    }
+
+    return handledAnyRule;
   }
 
   private async clickPrimaryButton(): Promise<boolean> {
@@ -845,10 +1144,30 @@ export class QuestionnairePage {
       }
 
       progressed = true;
-      await this.page.waitForTimeout(1200);
+      await this.waitForQuestionnaireTransition();
     }
 
     return progressed;
+  }
+
+  private async waitForQuestionnaireTransition(): Promise<void> {
+    await Promise.race([
+      this.page.waitForLoadState("domcontentloaded").catch(() => {}),
+      this.page
+        .locator(
+          [
+            'input[name="first_name"]',
+            ".appointment-type-radio-group",
+            ".rota-slot",
+            ':text("Complete your payment")',
+            ':text("Booking Confirmed")',
+          ].join(", "),
+        )
+        .first()
+        .waitFor({ state: "visible", timeout: 1_500 })
+        .catch(() => {}),
+      this.page.waitForTimeout(350),
+    ]);
   }
 
   /**

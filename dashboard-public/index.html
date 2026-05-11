@@ -4,801 +4,751 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Playwright Test Runner</title>
-    <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎭</text></svg>"
-    />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎭</text></svg>" />
     <style>
+      /* ── Design tokens (Playwright --ui inspired) ─────────────────────────── */
       :root {
-        --bg: #0b0d12;
-        --panel: #131722;
-        --panel-2: #1a1f2e;
-        --border: #232a3b;
-        --text: #e6eaf2;
-        --muted: #8a93a6;
-        --accent: #5b8cff;
-        --accent-2: #6ee7b7;
-        --danger: #ef4444;
-        --warn: #f59e0b;
-        --ok: #22c55e;
-        --radius: 12px;
-        --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
-      }
-      * {
-        box-sizing: border-box;
-      }
-      html,
-      body {
-        margin: 0;
-        padding: 0;
-        background: var(--bg);
-        color: var(--text);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
-          sans-serif;
-        font-size: 15px;
-        line-height: 1.5;
-        min-height: 100vh;
-      }
-      a {
-        color: var(--accent);
-      }
-      button {
-        font-family: inherit;
+        --sidebar-w: 300px;
+        --header-h: 48px;
+        --statusbar-h: 32px;
+
+        /* Surfaces */
+        --clr-header:     #2e3047;
+        --clr-sidebar:    #f6f7fb;
+        --clr-main:       #ffffff;
+        --clr-log:        #1a1b26;
+        --clr-border:     #e2e5ed;
+        --clr-border-drk: #3a3d55;
+
+        /* Text */
+        --clr-txt-sidebar: #3a3d55;
+        --clr-txt-header:  #e8eaf6;
+        --clr-txt-muted:   #8a93a6;
+        --clr-txt-log:     #a9b1d6;
+
+        /* Accents */
+        --clr-accent:   #5b8cff;
+        --clr-pass:     #22c55e;
+        --clr-fail:     #ef4444;
+        --clr-skip:     #f59e0b;
+        --clr-running:  #5b8cff;
+
+        /* Misc */
+        --radius-sm: 4px;
+        --radius:    8px;
+        --shadow:    0 1px 4px rgba(0,0,0,.12);
       }
 
-      /* Layout */
-      .shell {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 32px 28px 80px;
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; height: 100%; overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        font-size: 13px; line-height: 1.5; background: var(--clr-sidebar); color: var(--clr-txt-sidebar); }
+
+      /* ── Header ─────────────────────────────────────────────────────────── */
+      #header {
+        position: fixed; inset: 0 0 auto 0; height: var(--header-h);
+        background: var(--clr-header); display: flex; align-items: center;
+        gap: 12px; padding: 0 16px; z-index: 100;
+        border-bottom: 1px solid var(--clr-border-drk);
       }
-      .topbar {
+      #header .logo { font-size: 20px; line-height: 1; flex-shrink: 0; }
+      #header .title { font-size: 15px; font-weight: 600; color: var(--clr-txt-header); flex-shrink: 0; }
+      #pharmacy-select {
+        flex: 0 0 220px; height: 28px; padding: 0 8px; border-radius: var(--radius-sm);
+        border: 1px solid var(--clr-border-drk); background: #3a3d55; color: var(--clr-txt-header);
+        font-size: 13px; cursor: pointer; outline: none;
+      }
+      #pharmacy-select:focus { border-color: var(--clr-accent); }
+      #header .spacer { flex: 1; }
+      .hdr-btn {
+        height: 28px; padding: 0 14px; border-radius: var(--radius-sm);
+        border: none; font-size: 12px; font-weight: 600; cursor: pointer;
+        display: flex; align-items: center; gap: 6px; transition: opacity .15s;
+      }
+      .hdr-btn:disabled { opacity: .45; cursor: default; }
+      #btn-run-all { background: var(--clr-accent); color: #fff; }
+      #btn-stop    { background: var(--clr-fail);   color: #fff; }
+
+      /* ── Status bar ──────────────────────────────────────────────────────── */
+      #statusbar {
+        position: fixed; inset: var(--header-h) 0 auto 0; height: var(--statusbar-h);
+        background: #fff; border-bottom: 1px solid var(--clr-border);
+        display: flex; align-items: center; padding: 0 16px; gap: 10px; z-index: 99;
+        font-size: 12px; color: var(--clr-txt-muted);
+      }
+      #status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; transition: background .3s; }
+      #status-dot.idle    { background: #ccc; }
+      #status-dot.running { background: var(--clr-running); animation: pulse 1s infinite; }
+      #status-dot.pass    { background: var(--clr-pass); }
+      #status-dot.fail    { background: var(--clr-fail); }
+      @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+      #status-text { flex: 1; font-weight: 500; color: var(--clr-txt-sidebar); }
+      #status-counts span { margin-left: 10px; }
+      #status-counts .cnt-pass { color: var(--clr-pass); }
+      #status-counts .cnt-fail { color: var(--clr-fail); }
+      #status-counts .cnt-skip { color: var(--clr-skip); }
+
+      /* ── Body layout ─────────────────────────────────────────────────────── */
+      #body {
+        position: fixed;
+        inset: calc(var(--header-h) + var(--statusbar-h)) 0 0 0;
         display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 32px;
-      }
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-      .brand .logo {
-        width: 40px;
-        height: 40px;
-        border-radius: 10px;
-        background: linear-gradient(135deg, #5b8cff, #6ee7b7);
-        display: grid;
-        place-items: center;
-        font-size: 22px;
-      }
-      .brand h1 {
-        margin: 0;
-        font-size: 20px;
-        font-weight: 600;
-      }
-      .brand p {
-        margin: 0;
-        color: var(--muted);
-        font-size: 13px;
-      }
-      .topbar .actions {
-        display: flex;
-        gap: 10px;
       }
 
-      /* Crumbs */
-      .crumbs {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-size: 14px;
-        color: var(--muted);
-        margin-bottom: 20px;
-        min-height: 24px;
+      /* ── Sidebar ─────────────────────────────────────────────────────────── */
+      #sidebar {
+        width: var(--sidebar-w); min-width: var(--sidebar-w); height: 100%;
+        background: var(--clr-sidebar); border-right: 1px solid var(--clr-border);
+        display: flex; flex-direction: column; overflow: hidden;
       }
-      .crumbs .item {
-        color: var(--muted);
+      #search-wrap {
+        padding: 10px 12px; border-bottom: 1px solid var(--clr-border); flex-shrink: 0;
       }
-      .crumbs .item.active {
-        color: var(--text);
+      #search {
+        width: 100%; height: 28px; padding: 0 10px; border-radius: var(--radius-sm);
+        border: 1px solid var(--clr-border); background: #fff; font-size: 12px;
+        outline: none; color: var(--clr-txt-sidebar);
       }
-      .crumbs .sep {
-        opacity: 0.4;
-      }
-      .crumbs .item.link {
-        cursor: pointer;
-        color: var(--accent);
-      }
-      .crumbs .item.link:hover {
-        text-decoration: underline;
+      #search:focus { border-color: var(--clr-accent); }
+      #tree {
+        flex: 1; overflow-y: auto; padding: 8px 0;
       }
 
-      /* Buttons */
-      .btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 10px 16px;
-        background: var(--panel-2);
-        color: var(--text);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        font-size: 14px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.15s ease;
+      /* Tree nodes */
+      .tree-file {
+        padding: 0; margin: 2px 0;
       }
-      .btn:hover {
-        background: #232a3b;
-        border-color: #2f3851;
+      .tree-file-hdr {
+        display: flex; align-items: center; gap: 6px;
+        padding: 5px 12px; cursor: pointer; border-radius: var(--radius-sm);
+        margin: 0 4px; font-weight: 600; font-size: 12px;
+        color: var(--clr-txt-sidebar); user-select: none;
+        transition: background .12s;
       }
-      .btn.primary {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: #0b0d12;
+      .tree-file-hdr:hover { background: #ecedf5; }
+      .tree-file-hdr .chevron { font-size: 9px; transition: transform .2s; flex-shrink: 0; }
+      .tree-file-hdr.open .chevron { transform: rotate(90deg); }
+      .tree-file-hdr .file-icon { font-size: 13px; flex-shrink: 0; }
+      .tree-file-hdr .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .tree-file-hdr .run-file-btn {
+        opacity: 0; font-size: 10px; padding: 1px 6px; border-radius: 3px;
+        border: 1px solid var(--clr-accent); color: var(--clr-accent);
+        background: transparent; cursor: pointer; transition: opacity .15s; flex-shrink: 0;
       }
-      .btn.primary:hover {
-        background: #7ba2ff;
+      .tree-file-hdr:hover .run-file-btn { opacity: 1; }
+
+      .tree-children { display: none; padding-left: 0; }
+      .tree-children.open { display: block; }
+
+      .tree-suite-hdr {
+        display: flex; align-items: center; gap: 6px;
+        padding: 4px 12px 4px 28px; cursor: pointer;
+        margin: 0 4px; border-radius: var(--radius-sm);
+        font-size: 11px; font-weight: 600; color: var(--clr-txt-muted);
+        text-transform: uppercase; letter-spacing: .04em; user-select: none;
+        transition: background .12s;
       }
-      .btn.ghost {
-        background: transparent;
+      .tree-suite-hdr:hover { background: #ecedf5; }
+      .tree-suite-hdr .chevron { font-size: 8px; transition: transform .2s; }
+      .tree-suite-hdr.open .chevron { transform: rotate(90deg); }
+
+      .tree-test {
+        display: flex; align-items: center; gap: 8px;
+        padding: 5px 12px 5px 40px; cursor: pointer;
+        margin: 0 4px; border-radius: var(--radius-sm);
+        font-size: 12px; color: var(--clr-txt-sidebar);
+        transition: background .12s;
       }
-      .btn.danger {
-        background: transparent;
-        color: #fca5a5;
-        border-color: #3a2330;
+      .tree-test.suite-direct { padding-left: 28px; }
+      .tree-test:hover { background: #ecedf5; }
+      .tree-test.active { background: #e8eeff; color: var(--clr-accent); }
+
+      .tree-test .test-dot {
+        width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+        background: #ccc; transition: background .3s;
       }
-      .btn.danger:hover {
-        background: #2a1820;
+      .tree-test .test-dot.running { background: var(--clr-running); animation: pulse 1s infinite; }
+      .tree-test .test-dot.pass    { background: var(--clr-pass); }
+      .tree-test .test-dot.fail    { background: var(--clr-fail); }
+      .tree-test .test-dot.skip    { background: var(--clr-skip); }
+
+      .tree-test .test-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .tree-test .run-test-btn {
+        opacity: 0; font-size: 10px; padding: 1px 6px; border-radius: 3px;
+        border: 1px solid var(--clr-accent); color: var(--clr-accent);
+        background: transparent; cursor: pointer; transition: opacity .15s; flex-shrink: 0;
       }
-      .btn:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
+      .tree-test:hover .run-test-btn { opacity: 1; }
+
+      /* Empty state */
+      .empty-state {
+        padding: 40px 20px; text-align: center; color: var(--clr-txt-muted); font-size: 12px;
       }
 
-      /* Headings */
-      .section-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 20px;
-      }
-      .section-head h2 {
-        margin: 0;
-        font-size: 22px;
-        font-weight: 600;
-      }
-      .section-head p {
-        margin: 4px 0 0;
-        color: var(--muted);
-        font-size: 14px;
-      }
-
-      /* Pharmacy grid */
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-        gap: 18px;
-      }
-      .card {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 22px;
-        cursor: pointer;
-        transition: all 0.15s ease;
-        position: relative;
-      }
-      .card:hover {
-        border-color: var(--accent);
-        transform: translateY(-2px);
-        box-shadow: var(--shadow);
-      }
-      .card .icon {
-        width: 44px;
-        height: 44px;
-        border-radius: 10px;
-        display: grid;
-        place-items: center;
-        font-size: 20px;
-        font-weight: 600;
-        margin-bottom: 14px;
-        background: var(--panel-2);
-        color: var(--accent);
-      }
-      .card h3 {
-        margin: 0 0 6px;
-        font-size: 17px;
-        font-weight: 600;
-      }
-      .card .url {
-        margin: 0;
-        font-size: 12px;
-        color: var(--muted);
-        word-break: break-all;
-      }
-      .card .badge {
-        position: absolute;
-        top: 14px;
-        right: 14px;
-        font-size: 11px;
-        padding: 3px 8px;
-        background: var(--panel-2);
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        color: var(--muted);
-      }
-
-      /* Test list */
-      .toolbar {
-        display: flex;
-        gap: 12px;
-        align-items: center;
-        margin-bottom: 18px;
-      }
-      .search {
-        flex: 1;
-        padding: 11px 14px;
-        background: var(--panel);
-        color: var(--text);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        font-size: 14px;
-        outline: none;
-      }
-      .search:focus {
-        border-color: var(--accent);
-      }
-
-      .test-list {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
+      /* ── Main panel ──────────────────────────────────────────────────────── */
+      #main {
+        flex: 1; min-width: 0; height: 100%;
+        display: flex; flex-direction: column; background: var(--clr-main);
         overflow: hidden;
       }
-      .test-group {
-        border-bottom: 1px solid var(--border);
+
+      /* Browser chrome (the fake browser frame) */
+      #browser-chrome {
+        flex-shrink: 0; background: #292b3f; padding: 10px 12px 0;
+        display: flex; flex-direction: column; gap: 8px;
       }
-      .test-group:last-child {
-        border-bottom: none;
+      #browser-dots {
+        display: flex; gap: 6px; align-items: center;
       }
-      .test-group .group-title {
-        padding: 14px 20px;
-        background: var(--panel-2);
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
+      #browser-dots span {
+        width: 10px; height: 10px; border-radius: 50%;
       }
-      .test-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 14px 20px;
-        border-top: 1px solid var(--border);
-        gap: 14px;
+      #browser-dots .dot-r { background: #ff5f57; }
+      #browser-dots .dot-y { background: #ffbd2e; }
+      #browser-dots .dot-g { background: #28c840; }
+      #browser-url {
+        flex: 1; height: 22px; background: #3a3d55; border-radius: 11px;
+        border: none; font-size: 11px; color: #a9b1d6; padding: 0 12px;
+        margin-left: 10px; outline: none; width: calc(100% - 10px);
       }
-      .test-row:first-of-type {
-        border-top: none;
+      #browser-url-row { display: flex; align-items: center; }
+
+      #viewport {
+        background: #1a1b26; height: 240px; display: flex; align-items: center;
+        justify-content: center; position: relative; overflow: hidden;
       }
-      .test-row:hover {
-        background: var(--panel-2);
+      #viewport-placeholder {
+        display: flex; flex-direction: column; align-items: center; gap: 10px;
+        color: #4a4d6a; font-size: 13px; user-select: none;
       }
-      .test-info {
-        flex: 1;
-        min-width: 0;
-      }
-      .test-title {
-        font-size: 14px;
-        font-weight: 500;
-        margin-bottom: 3px;
-        word-break: break-word;
-      }
-      .test-meta {
-        font-size: 12px;
-        color: var(--muted);
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      }
-      .test-row .btn {
-        padding: 7px 14px;
-        font-size: 13px;
+      #viewport-placeholder .icon { font-size: 36px; }
+      #video-player {
+        width: 100%; height: 100%; object-fit: contain; display: none;
       }
 
-      /* Run panel (sticky bottom while running) */
-      .run-panel {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        margin-top: 20px;
-        overflow: hidden;
+      /* Tab bar */
+      #tab-bar {
+        display: flex; border-bottom: 1px solid var(--clr-border);
+        background: #f6f7fb; flex-shrink: 0;
       }
-      .run-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 14px 20px;
-        background: var(--panel-2);
-        gap: 14px;
+      .tab {
+        padding: 6px 16px; font-size: 12px; font-weight: 500;
+        cursor: pointer; color: var(--clr-txt-muted); border-bottom: 2px solid transparent;
+        transition: color .15s, border-color .15s;
       }
-      .run-head .meta {
-        font-size: 14px;
-      }
-      .run-head .meta .label {
-        color: var(--muted);
-        margin-right: 6px;
-      }
-      .badges {
-        display: inline-flex;
-        gap: 8px;
-      }
-      .badge-pill {
-        font-size: 12px;
-        padding: 4px 10px;
-        border-radius: 999px;
-        background: var(--panel);
-        border: 1px solid var(--border);
-      }
-      .badge-pill.ok {
-        color: #86efac;
-        border-color: #1f4232;
-      }
-      .badge-pill.fail {
-        color: #fca5a5;
-        border-color: #4a2330;
-      }
-      .badge-pill.skip {
-        color: #fcd34d;
-        border-color: #4a3a1c;
-      }
-      .badge-pill.running {
-        color: #93c5fd;
-        border-color: #1e3a5f;
-      }
-      .log {
-        background: #06080d;
-        color: #c9d1d9;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 12.5px;
-        line-height: 1.55;
-        padding: 16px 20px;
-        max-height: 420px;
-        overflow-y: auto;
-        white-space: pre-wrap;
-        word-break: break-word;
-      }
-      .log .pass {
-        color: #86efac;
-      }
-      .log .fail {
-        color: #fca5a5;
-      }
-      .log .skip {
-        color: #fcd34d;
-      }
-      .log .dim {
-        color: #6b7280;
-      }
+      .tab.active { color: var(--clr-accent); border-bottom-color: var(--clr-accent); }
+      .tab:hover:not(.active) { color: var(--clr-txt-sidebar); }
 
-      /* Empty + loading states */
-      .empty,
-      .loading {
-        padding: 60px 20px;
-        text-align: center;
-        color: var(--muted);
-        font-size: 14px;
-        background: var(--panel);
-        border: 1px dashed var(--border);
-        border-radius: var(--radius);
+      /* Output / log panel */
+      #output-panel {
+        flex: 1; min-height: 0; background: var(--clr-log); overflow: hidden;
+        display: flex; flex-direction: column;
+      }
+      #log {
+        flex: 1; overflow-y: auto; padding: 10px 14px;
+        font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+        font-size: 12px; line-height: 1.7; color: var(--clr-txt-log);
+        white-space: pre-wrap; word-break: break-word;
+      }
+      .log-pass  { color: #9ece6a; }
+      .log-fail  { color: #f7768e; }
+      .log-warn  { color: #e0af68; }
+      .log-start { color: #7aa2f7; font-style: italic; }
+      .log-done  { font-weight: 700; }
+
+      /* Artifacts panel */
+      #artifacts-panel {
+        display: none; flex: 1; min-height: 0; overflow-y: auto;
+        padding: 16px; background: var(--clr-main);
+      }
+      #artifacts-panel h3 { margin: 0 0 12px; font-size: 13px; color: var(--clr-txt-sidebar); }
+      .artifact-section { margin-bottom: 20px; }
+      .artifact-section h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+        color: var(--clr-txt-muted); margin: 0 0 8px; }
+      .artifact-list { display: flex; flex-direction: column; gap: 6px; }
+      .artifact-item {
+        display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+        border: 1px solid var(--clr-border); border-radius: var(--radius-sm);
+        background: #f6f7fb; font-size: 12px; color: var(--clr-txt-sidebar);
+        text-decoration: none; transition: border-color .15s, background .15s;
+      }
+      .artifact-item:hover { border-color: var(--clr-accent); background: #eef0ff; }
+      .artifact-item .icon { font-size: 15px; flex-shrink: 0; }
+      .artifact-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .artifact-empty { color: var(--clr-txt-muted); font-size: 12px; padding: 8px 0; }
+
+      /* Loading spinner */
+      #loading {
+        display: flex; align-items: center; gap: 8px;
+        padding: 20px; color: var(--clr-txt-muted); font-size: 12px;
+        justify-content: center;
       }
       .spinner {
-        display: inline-block;
-        width: 16px;
-        height: 16px;
-        border: 2px solid var(--border);
-        border-top-color: var(--accent);
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-        vertical-align: -3px;
-        margin-right: 8px;
+        width: 16px; height: 16px; border-radius: 50%;
+        border: 2px solid var(--clr-border); border-top-color: var(--clr-accent);
+        animation: spin .7s linear infinite; flex-shrink: 0;
       }
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
+      @keyframes spin { to { transform: rotate(360deg); } }
 
-      .hidden {
-        display: none !important;
-      }
+      /* Scrollbars */
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #c8cce0; border-radius: 3px; }
+      #log::-webkit-scrollbar-thumb { background: #3a3d55; }
 
-      .footer-note {
-        margin-top: 40px;
-        text-align: center;
-        color: var(--muted);
-        font-size: 12px;
+      /* Responsive */
+      @media (max-width: 680px) {
+        :root { --sidebar-w: 240px; }
+        #viewport { height: 160px; }
       }
     </style>
   </head>
   <body>
-    <div class="shell">
-      <header class="topbar">
-        <div class="brand">
-          <div class="logo">🎭</div>
-          <div>
-            <h1>Playwright Test Runner</h1>
-            <p>Pick a pharmacy, then run any test</p>
-          </div>
-        </div>
-        <div class="actions">
-          <button class="btn ghost" id="btn-ui" title="Open Playwright UI">
-            🪟 Open Preview
-          </button>
-        </div>
-      </header>
 
-      <nav class="crumbs" id="crumbs"></nav>
+    <!-- ── Header ──────────────────────────────────────────────────────────── -->
+    <header id="header">
+      <div class="logo">🎭</div>
+      <div class="title">Playwright</div>
+      <select id="pharmacy-select" title="Select pharmacy">
+        <option value="">Loading pharmacies…</option>
+      </select>
+      <div class="spacer"></div>
+      <button class="hdr-btn" id="btn-run-all" disabled title="Run all tests for selected pharmacy">
+        ▶ Run All
+      </button>
+      <button class="hdr-btn" id="btn-stop" style="display:none" title="Stop current run">
+        ■ Stop
+      </button>
+    </header>
 
-      <!-- View 1: pharmacies -->
-      <section id="view-pharmacies">
-        <div class="section-head">
-          <div>
-            <h2>Select a pharmacy</h2>
-            <p>Tests will run against the chosen pharmacy's site</p>
-          </div>
-        </div>
-        <div id="pharmacy-grid" class="grid">
-          <div class="loading"><span class="spinner"></span>Loading pharmacies...</div>
-        </div>
-      </section>
+    <!-- ── Status bar ──────────────────────────────────────────────────────── -->
+    <div id="statusbar">
+      <div id="status-dot" class="idle"></div>
+      <span id="status-text">Select a pharmacy to load tests</span>
+      <div id="status-counts">
+        <span class="cnt-pass" id="cnt-pass" style="display:none"></span>
+        <span class="cnt-fail" id="cnt-fail" style="display:none"></span>
+        <span class="cnt-skip" id="cnt-skip" style="display:none"></span>
+      </div>
+    </div>
 
-      <!-- View 2: tests -->
-      <section id="view-tests" class="hidden">
-        <div class="section-head">
-          <div>
-            <h2 id="tests-title">Tests</h2>
-            <p id="tests-subtitle"></p>
-          </div>
-          <div style="display: flex; gap: 10px">
-            <button class="btn ghost" id="btn-back">← Pharmacies</button>
-            <button class="btn primary" id="btn-run-all">▶ Run all tests</button>
-          </div>
-        </div>
-        <div class="toolbar">
-          <input
-            id="search"
-            type="text"
-            class="search"
-            placeholder="Search tests by name or file..."
-          />
-        </div>
-        <div id="test-list" class="test-list">
-          <div class="loading"><span class="spinner"></span>Discovering tests...</div>
-        </div>
+    <!-- ── Body ────────────────────────────────────────────────────────────── -->
+    <div id="body">
 
-        <!-- Run output -->
-        <div id="run-panel" class="run-panel hidden">
-          <div class="run-head">
-            <div class="meta">
-              <span class="label">Running:</span>
-              <strong id="run-label">—</strong>
+      <!-- Sidebar: test tree -->
+      <nav id="sidebar">
+        <div id="search-wrap">
+          <input id="search" type="search" placeholder="Filter tests…" autocomplete="off" />
+        </div>
+        <div id="tree">
+          <div class="empty-state">Select a pharmacy to load tests</div>
+        </div>
+      </nav>
+
+      <!-- Main panel -->
+      <main id="main">
+
+        <!-- Browser chrome + viewport -->
+        <div id="browser-chrome">
+          <div id="browser-url-row">
+            <div id="browser-dots">
+              <span class="dot-r"></span>
+              <span class="dot-y"></span>
+              <span class="dot-g"></span>
             </div>
-            <div style="display: flex; gap: 12px; align-items: center">
-              <span class="badges" id="run-badges"></span>
-              <button class="btn danger" id="btn-stop">Stop</button>
+            <input id="browser-url" readonly value="about:blank" />
+          </div>
+          <div id="viewport">
+            <div id="viewport-placeholder">
+              <div class="icon">🖥️</div>
+              <div>Run a test to see video playback here</div>
+            </div>
+            <video id="video-player" controls></video>
+          </div>
+        </div>
+
+        <!-- Tab bar -->
+        <div id="tab-bar">
+          <div class="tab active" data-tab="output">Output</div>
+          <div class="tab" data-tab="artifacts">Artifacts</div>
+        </div>
+
+        <!-- Output panel -->
+        <div id="output-panel">
+          <div id="log"><span class="log-start">Ready. Select a pharmacy and run a test.</span></div>
+        </div>
+
+        <!-- Artifacts panel -->
+        <div id="artifacts-panel">
+          <h3>Run Artifacts</h3>
+          <div class="artifact-section">
+            <h4>📹 Videos</h4>
+            <div class="artifact-list" id="artifact-videos">
+              <div class="artifact-empty">No videos yet. Run a test first.</div>
             </div>
           </div>
-          <pre id="log" class="log"></pre>
+          <div class="artifact-section">
+            <h4>🔍 Traces</h4>
+            <div class="artifact-list" id="artifact-traces">
+              <div class="artifact-empty">No traces yet. Run a test first.</div>
+            </div>
+          </div>
         </div>
-      </section>
 
-      <p class="footer-note">
-        Test data lives in <code>tests/fixtures/test-data.ts</code> — no manual
-        entry required.
-      </p>
+      </main>
     </div>
 
     <script>
-      // ── State ──────────────────────────────────────────────────────────────
-      const state = {
-        pharmacies: [],
-        tests: [],
-        selectedPharmacy: null,
-        running: false,
-        es: null,
-      };
+    // ── State ──────────────────────────────────────────────────────────────────
+    let allTests = [];
+    let currentPharmacy = null;
+    let activeES = null;
+    let running = false;
+    let filterText = "";
 
-      // ── Helpers ────────────────────────────────────────────────────────────
-      const $ = (id) => document.getElementById(id);
-      const escapeHTML = (s) =>
-        String(s ?? "").replace(/[&<>"']/g, (c) => ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;",
-        }[c]));
+    // ── DOM refs ───────────────────────────────────────────────────────────────
+    const pharmacySel  = document.getElementById("pharmacy-select");
+    const btnRunAll    = document.getElementById("btn-run-all");
+    const btnStop      = document.getElementById("btn-stop");
+    const statusDot    = document.getElementById("status-dot");
+    const statusText   = document.getElementById("status-text");
+    const cntPass      = document.getElementById("cnt-pass");
+    const cntFail      = document.getElementById("cnt-fail");
+    const cntSkip      = document.getElementById("cnt-skip");
+    const treeEl       = document.getElementById("tree");
+    const searchEl     = document.getElementById("search");
+    const logEl        = document.getElementById("log");
+    const videoEl      = document.getElementById("video-player");
+    const vpHolder     = document.getElementById("viewport-placeholder");
+    const browserUrl   = document.getElementById("browser-url");
+    const artifVideos  = document.getElementById("artifact-videos");
+    const artifTraces  = document.getElementById("artifact-traces");
 
-      function setView(name) {
-        $("view-pharmacies").classList.toggle("hidden", name !== "pharmacies");
-        $("view-tests").classList.toggle("hidden", name !== "tests");
-        renderCrumbs();
+    // ── Tabs ───────────────────────────────────────────────────────────────────
+    document.querySelectorAll(".tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        const which = tab.dataset.tab;
+        document.getElementById("output-panel").style.display   = which === "output"    ? "flex" : "none";
+        document.getElementById("artifacts-panel").style.display = which === "artifacts" ? "flex" : "none";
+      });
+    });
+
+    // ── Status helpers ─────────────────────────────────────────────────────────
+    function setStatus(state, text) {
+      statusDot.className = state;
+      statusText.textContent = text;
+    }
+    function hideCounts() {
+      [cntPass, cntFail, cntSkip].forEach(el => el.style.display = "none");
+    }
+    function showCounts(passed, failed, skipped) {
+      if (passed) { cntPass.textContent = `✓ ${passed}`; cntPass.style.display = ""; }
+      if (failed) { cntFail.textContent = `✗ ${failed}`; cntFail.style.display = ""; }
+      if (skipped) { cntSkip.textContent = `⊘ ${skipped}`; cntSkip.style.display = ""; }
+    }
+
+    // ── Log helpers ────────────────────────────────────────────────────────────
+    function appendLog(text, className) {
+      const line = document.createElement("div");
+      if (className) line.className = className;
+      line.textContent = text;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    function clearLog() {
+      logEl.innerHTML = "";
+    }
+    function classifyLog(text) {
+      if (/passed|✓|PASS/i.test(text)) return "log-pass";
+      if (/failed|✘|FAIL|Error|error/i.test(text)) return "log-fail";
+      if (/warn|Warning/i.test(text)) return "log-warn";
+      return "";
+    }
+
+    // ── Pharmacy load ──────────────────────────────────────────────────────────
+    async function loadPharmacies() {
+      try {
+        const res = await fetch("/api/pharmacies");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const list = await res.json();
+        pharmacySel.innerHTML = '<option value="">Select pharmacy…</option>';
+        list.forEach(p => {
+          const opt = document.createElement("option");
+          opt.value = p.name;
+          opt.textContent = p.name;
+          pharmacySel.appendChild(opt);
+        });
+        setStatus("idle", "Select a pharmacy to load tests");
+      } catch (e) {
+        pharmacySel.innerHTML = '<option value="">Error loading pharmacies</option>';
+        setStatus("idle", "Failed to load pharmacies: " + e.message);
+      }
+    }
+
+    pharmacySel.addEventListener("change", () => {
+      const name = pharmacySel.value;
+      if (!name) { treeEl.innerHTML = '<div class="empty-state">Select a pharmacy to load tests</div>'; btnRunAll.disabled = true; return; }
+      currentPharmacy = name;
+      loadTests(name);
+    });
+
+    // ── Test list load ─────────────────────────────────────────────────────────
+    async function loadTests(pharmacyName) {
+      treeEl.innerHTML = '<div id="loading"><div class="spinner"></div>Loading tests…</div>';
+      btnRunAll.disabled = true;
+      setStatus("idle", `Loading tests for ${pharmacyName}…`);
+      try {
+        const res = await fetch(`/api/tests?project=${encodeURIComponent(pharmacyName)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        allTests = await res.json();
+        setStatus("idle", `${allTests.length} test${allTests.length !== 1 ? "s" : ""} — ${pharmacyName}`);
+        hideCounts();
+        renderTree(allTests);
+        btnRunAll.disabled = false;
+      } catch (e) {
+        treeEl.innerHTML = `<div class="empty-state">Error loading tests: ${e.message}</div>`;
+        setStatus("idle", "Failed to load tests");
+      }
+    }
+
+    // ── Tree builder ───────────────────────────────────────────────────────────
+    function renderTree(tests) {
+      const query = filterText.toLowerCase();
+      const visible = query
+        ? tests.filter(t => t.fullTitle.toLowerCase().includes(query) || t.file.toLowerCase().includes(query))
+        : tests;
+
+      if (visible.length === 0) {
+        treeEl.innerHTML = '<div class="empty-state">No tests match your filter</div>';
+        return;
       }
 
-      function renderCrumbs() {
-        const c = $("crumbs");
-        const isTests = !$("view-tests").classList.contains("hidden");
-        if (isTests && state.selectedPharmacy) {
-          c.innerHTML = `
-            <span class="item link" onclick="goPharmacies()">Pharmacies</span>
-            <span class="sep">/</span>
-            <span class="item active">${escapeHTML(state.selectedPharmacy.name)}</span>
-          `;
-        } else {
-          c.innerHTML = `<span class="item active">Pharmacies</span>`;
-        }
-      }
-
-      window.goPharmacies = function () {
-        state.selectedPharmacy = null;
-        setView("pharmacies");
-      };
-
-      // ── Load pharmacies ────────────────────────────────────────────────────
-      async function loadPharmacies() {
-        try {
-          const res = await fetch("/api/pharmacies");
-          state.pharmacies = await res.json();
-        } catch (e) {
-          $("pharmacy-grid").innerHTML =
-            '<div class="empty">Failed to load pharmacies. Is the dashboard server running?</div>';
-          return;
-        }
-        renderPharmacies();
-      }
-
-      function pharmacyInitials(name) {
-        return name
-          .split(" ")
-          .map((w) => w[0])
-          .join("")
-          .slice(0, 2)
-          .toUpperCase();
-      }
-
-      function renderPharmacies() {
-        const grid = $("pharmacy-grid");
-        if (!state.pharmacies.length) {
-          grid.innerHTML = '<div class="empty">No pharmacies configured.</div>';
-          return;
-        }
-        grid.innerHTML = state.pharmacies
-          .map(
-            (p) => `
-          <div class="card" onclick='selectPharmacy(${JSON.stringify(p)})'>
-            ${p.ciSkip ? '<span class="badge">local</span>' : ""}
-            <div class="icon">${escapeHTML(pharmacyInitials(p.name))}</div>
-            <h3>${escapeHTML(p.name)}</h3>
-            <p class="url">${escapeHTML(p.baseURL)}</p>
-          </div>
-        `
-          )
-          .join("");
-      }
-
-      window.selectPharmacy = function (pharmacy) {
-        state.selectedPharmacy = pharmacy;
-        $("tests-title").textContent = pharmacy.name;
-        $("tests-subtitle").textContent = pharmacy.baseURL;
-        setView("tests");
-        loadTests();
-      };
-
-      // ── Load tests ─────────────────────────────────────────────────────────
-      async function loadTests() {
-        const list = $("test-list");
-        list.innerHTML =
-          '<div class="loading"><span class="spinner"></span>Discovering tests...</div>';
-        try {
-          const res = await fetch("/api/tests");
-          if (!res.ok) throw new Error(await res.text());
-          state.tests = await res.json();
-        } catch (e) {
-          list.innerHTML = `<div class="empty">Failed to load tests: ${escapeHTML(
-            e.message
-          )}</div>`;
-          return;
-        }
-        renderTests();
-      }
-
-      function renderTests() {
-        const filter = $("search").value.trim().toLowerCase();
-        const filtered = state.tests.filter(
-          (t) =>
-            !filter ||
-            t.fullTitle.toLowerCase().includes(filter) ||
-            (t.file || "").toLowerCase().includes(filter)
-        );
-        if (!filtered.length) {
-          $("test-list").innerHTML =
-            '<div class="empty">No matching tests.</div>';
-          return;
-        }
-        // Group by file
-        const groups = {};
-        for (const t of filtered) {
-          const f = t.file || "(unknown)";
-          (groups[f] = groups[f] || []).push(t);
-        }
-        $("test-list").innerHTML = Object.entries(groups)
-          .map(
-            ([file, tests]) => `
-              <div class="test-group">
-                <div class="group-title">${escapeHTML(file)}</div>
-                ${tests
-                  .map(
-                    (t) => `
-                  <div class="test-row">
-                    <div class="test-info">
-                      <div class="test-title">${escapeHTML(t.fullTitle)}</div>
-                      <div class="test-meta">${escapeHTML(t.file)}${
-                      t.line ? ":" + t.line : ""
-                    }</div>
-                    </div>
-                    <button class="btn primary" onclick='runTest(${JSON.stringify(
-                      { file: t.file, line: t.line, label: t.fullTitle }
-                    )})' ${state.running ? "disabled" : ""}>▶ Run</button>
-                  </div>
-                `
-                  )
-                  .join("")}
-              </div>
-            `
-          )
-          .join("");
-      }
-
-      $("search").addEventListener("input", renderTests);
-
-      // ── Run tests ──────────────────────────────────────────────────────────
-      window.runTest = function (t) {
-        startRun({ file: t.file, line: t.line, label: t.label });
-      };
-      $("btn-run-all").addEventListener("click", () =>
-        startRun({ label: `All tests · ${state.selectedPharmacy.name}` })
-      );
-
-      $("btn-stop").addEventListener("click", () => {
-        if (state.es) state.es.close();
-        state.running = false;
-        appendLog("\n— Stopped by user —\n", "fail");
-        finishRun({ stopped: true });
+      // Group by file → suite
+      const byFile = {};
+      visible.forEach(t => {
+        if (!byFile[t.file]) byFile[t.file] = {};
+        const parts = (t.fullTitle || t.title).split(" > ");
+        const testName = parts[parts.length - 1];
+        const suite    = parts.length > 1 ? parts.slice(0, -1).join(" > ") : "__direct__";
+        if (!byFile[t.file][suite]) byFile[t.file][suite] = [];
+        byFile[t.file][suite].push({ ...t, _testName: testName });
       });
 
-      $("btn-back").addEventListener("click", () => {
-        if (state.running) {
-          if (!confirm("A test is running. Stop and go back?")) return;
-          if (state.es) state.es.close();
-          state.running = false;
-        }
-        goPharmacies();
-      });
+      treeEl.innerHTML = "";
 
-      function startRun({ file, line, label }) {
-        if (state.running) return;
-        state.running = true;
-        $("run-panel").classList.remove("hidden");
-        $("log").textContent = "";
-        $("run-label").textContent = label;
-        setBadges([{ kind: "running", text: "running…" }]);
-        renderTests(); // disable run buttons
+      for (const [file, suites] of Object.entries(byFile)) {
+        const shortName = file.split("/").pop();
+        const fileDiv   = document.createElement("div");
+        fileDiv.className = "tree-file";
 
-        const params = new URLSearchParams();
-        params.set("project", state.selectedPharmacy.name);
-        if (file) params.set("file", file);
-        if (line) params.set("line", line);
-        if (label) params.set("label", label);
-
-        const es = new EventSource(`/api/run-tests?${params.toString()}`);
-        state.es = es;
-
-        es.addEventListener("message", (ev) => {
-          let msg;
-          try {
-            msg = JSON.parse(ev.data);
-          } catch {
-            return;
-          }
-          if (msg.type === "start") {
-            appendLog(msg.data + "\n", "dim");
-          } else if (msg.type === "log") {
-            appendLog(msg.data + "\n");
-          } else if (msg.type === "done") {
-            es.close();
-            state.es = null;
-            state.running = false;
-            const d = msg.data || {};
-            const badges = [];
-            if (d.passed) badges.push({ kind: "ok", text: d.passed });
-            if (d.failed) badges.push({ kind: "fail", text: d.failed });
-            if (d.skipped) badges.push({ kind: "skip", text: d.skipped });
-            if (!badges.length)
-              badges.push({
-                kind: d.success ? "ok" : "fail",
-                text: d.success ? "✓ passed" : "✗ failed",
-              });
-            setBadges(badges);
-            finishRun({ success: d.success });
-          }
+        const fileHdr = document.createElement("div");
+        fileHdr.className = "tree-file-hdr open";
+        fileHdr.innerHTML = `
+          <span class="chevron">▶</span>
+          <span class="file-icon">📄</span>
+          <span class="file-name" title="${file}">${shortName}</span>
+          <button class="run-file-btn" title="Run all tests in this file">Run</button>
+        `;
+        fileHdr.querySelector(".run-file-btn").addEventListener("click", e => {
+          e.stopPropagation();
+          startRun({ file, label: shortName });
+        });
+        fileHdr.addEventListener("click", e => {
+          if (e.target.classList.contains("run-file-btn")) return;
+          fileHdr.classList.toggle("open");
+          childrenDiv.classList.toggle("open");
         });
 
-        es.addEventListener("error", () => {
-          if (!state.running) return; // closed intentionally
-          appendLog("\n[stream closed]\n", "fail");
-          state.running = false;
-          finishRun({ error: true });
-        });
-      }
+        const childrenDiv = document.createElement("div");
+        childrenDiv.className = "tree-children open";
 
-      function finishRun() {
-        renderTests(); // re-enable buttons
-      }
+        for (const [suite, sTests] of Object.entries(suites)) {
+          if (suite === "__direct__") {
+            sTests.forEach(t => childrenDiv.appendChild(makeTestNode(t, "suite-direct")));
+          } else {
+            const suiteHdr = document.createElement("div");
+            suiteHdr.className = "tree-suite-hdr open";
+            suiteHdr.innerHTML = `<span class="chevron">▶</span><span>${suite}</span>`;
 
-      function setBadges(badges) {
-        $("run-badges").innerHTML = badges
-          .map(
-            (b) =>
-              `<span class="badge-pill ${b.kind}">${escapeHTML(b.text)}</span>`
-          )
-          .join("");
-      }
+            const suiteChildren = document.createElement("div");
+            suiteChildren.className = "tree-children open";
+            sTests.forEach(t => suiteChildren.appendChild(makeTestNode(t)));
 
-      function appendLog(text, cls) {
-        const log = $("log");
-        const span = document.createElement("span");
-        if (cls) span.className = cls;
-        // Color hints
-        if (!cls) {
-          if (/✓|passed/i.test(text)) span.className = "pass";
-          else if (/✗|✘|failed|error/i.test(text)) span.className = "fail";
-          else if (/skipped/i.test(text)) span.className = "skip";
+            suiteHdr.addEventListener("click", () => {
+              suiteHdr.classList.toggle("open");
+              suiteChildren.classList.toggle("open");
+            });
+
+            childrenDiv.appendChild(suiteHdr);
+            childrenDiv.appendChild(suiteChildren);
+          }
         }
-        span.textContent = text;
-        log.appendChild(span);
-        log.scrollTop = log.scrollHeight;
-      }
 
-      // ── Playwright UI button ──────────────────────────────────────────────
-      $("btn-ui").addEventListener("click", async () => {
-        const btn = $("btn-ui");
-        btn.disabled = true;
-        btn.textContent = "Launching…";
-        try {
-          const res = await fetch("/api/launch-ui", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: "{}",
-          });
-          const data = await res.json();
-          const port = data.port || 8081;
-          // Brief delay to let UI server boot
-          setTimeout(() => {
-            window.open(`http://localhost:${port}`, "_blank");
-            btn.disabled = false;
-            btn.textContent = "🪟 Open Preview";
-          }, 1500);
-        } catch (e) {
-          alert("Failed to launch Playwright UI: " + e.message);
-          btn.disabled = false;
-          btn.textContent = "🪟 Open Preview";
-        }
+        fileDiv.appendChild(fileHdr);
+        fileDiv.appendChild(childrenDiv);
+        treeEl.appendChild(fileDiv);
+      }
+    }
+
+    function makeTestNode(t, extraClass) {
+      const div = document.createElement("div");
+      div.className = "tree-test" + (extraClass ? " " + extraClass : "");
+      div.dataset.fullTitle = t.fullTitle || t.title;
+      div.innerHTML = `
+        <span class="test-dot" data-title="${t.fullTitle || t.title}"></span>
+        <span class="test-name" title="${t.fullTitle || t.title}">${t._testName || t.title}</span>
+        <button class="run-test-btn" title="Run this test">▶</button>
+      `;
+      div.querySelector(".run-test-btn").addEventListener("click", e => {
+        e.stopPropagation();
+        startRun({ file: t.file, line: t.line, grep: t.fullTitle, label: t._testName || t.title });
+      });
+      div.addEventListener("click", e => {
+        if (e.target.classList.contains("run-test-btn")) return;
+        // just select without running
+        document.querySelectorAll(".tree-test").forEach(n => n.classList.remove("active"));
+        div.classList.add("active");
+      });
+      return div;
+    }
+
+    // ── Search filter ──────────────────────────────────────────────────────────
+    searchEl.addEventListener("input", () => {
+      filterText = searchEl.value;
+      renderTree(allTests);
+    });
+
+    // ── Run ────────────────────────────────────────────────────────────────────
+    function startRun({ file, line, grep, label } = {}) {
+      if (running) return;
+      if (!currentPharmacy) { alert("Select a pharmacy first."); return; }
+
+      running = true;
+      clearLog();
+      hideCounts();
+      setStatus("running", `Running${label ? ": " + label : " all tests"}…`);
+      btnRunAll.style.display = "none";
+      btnStop.style.display   = "";
+      videoEl.style.display   = "none";
+      vpHolder.style.display  = "flex";
+      browserUrl.value = "Running…";
+
+      // Mark all dots as running (or just the targeted one)
+      const targets = file
+        ? treeEl.querySelectorAll(`.tree-test[data-full-title]`)
+        : treeEl.querySelectorAll(".tree-test");
+      treeEl.querySelectorAll(".test-dot").forEach(d => {
+        d.className = "test-dot";
       });
 
-      // ── Init ───────────────────────────────────────────────────────────────
-      loadPharmacies();
-      renderCrumbs();
+      // Build SSE URL
+      const params = new URLSearchParams({ project: currentPharmacy });
+      if (file)  params.set("file", file);
+      if (line)  params.set("line", line);
+      if (grep)  params.set("grep", grep);
+      if (label) params.set("label", label);
+
+      activeES = new EventSource(`/api/run-tests?${params}`);
+
+      activeES.onmessage = (e) => {
+        const { type, data } = JSON.parse(e.data);
+
+        if (type === "start") {
+          appendLog(data, "log-start");
+        } else if (type === "log") {
+          appendLog(data, classifyLog(data));
+          // Update URL bar if we see a URL-like string
+          const m = data.match(/https?:\/\/\S+/);
+          if (m) browserUrl.value = m[0];
+        } else if (type === "done") {
+          running = false;
+          activeES.close(); activeES = null;
+          btnStop.style.display   = "none";
+          btnRunAll.style.display = "";
+
+          const ok = data.success;
+          setStatus(ok ? "pass" : "fail", ok ? "All tests passed" : "Some tests failed");
+          if (data.passed || data.failed || data.skipped)
+            showCounts(data.passed, data.failed, data.skipped);
+
+          appendLog(
+            `\n── Run ${ok ? "✓ passed" : "✗ failed"} (code ${data.code}) ──`,
+            "log-done " + (ok ? "log-pass" : "log-fail")
+          );
+
+          // Artifacts
+          if (data.artifacts) {
+            updateArtifacts(data.artifacts);
+          }
+        }
+      };
+
+      activeES.onerror = () => {
+        if (!running) return;
+        running = false;
+        activeES = null;
+        btnStop.style.display   = "none";
+        btnRunAll.style.display = "";
+        setStatus("fail", "Connection error");
+        appendLog("Connection to server lost.", "log-fail");
+      };
+    }
+
+    btnRunAll.addEventListener("click", () => startRun());
+    btnStop.addEventListener("click", () => {
+      if (activeES) { activeES.close(); activeES = null; }
+      running = false;
+      btnStop.style.display   = "none";
+      btnRunAll.style.display = "";
+      setStatus("idle", "Stopped");
+      appendLog("Run stopped by user.", "log-warn");
+    });
+
+    // ── Artifacts ──────────────────────────────────────────────────────────────
+    function updateArtifacts(artifacts) {
+      // Videos
+      if (artifacts.videos && artifacts.videos.length) {
+        artifVideos.innerHTML = "";
+        artifacts.videos.forEach((url, i) => {
+          const name = url.split("/").pop();
+          const a = document.createElement("a");
+          a.href = url; a.target = "_blank";
+          a.className = "artifact-item";
+          a.innerHTML = `<span class="icon">📹</span><span class="name">${name}</span><span>↗</span>`;
+          artifVideos.appendChild(a);
+        });
+        // Auto-play latest video
+        const latest = artifacts.videos[artifacts.videos.length - 1];
+        videoEl.src = latest;
+        videoEl.style.display = "block";
+        vpHolder.style.display = "none";
+        videoEl.play().catch(() => {});
+        browserUrl.value = window.location.origin + latest;
+      } else {
+        artifVideos.innerHTML = '<div class="artifact-empty">No videos captured.</div>';
+      }
+
+      // Traces
+      if (artifacts.traces && artifacts.traces.length) {
+        artifTraces.innerHTML = "";
+        artifacts.traces.forEach(url => {
+          const name = url.split("/").pop();
+          const traceViewUrl = `https://trace.playwright.dev/?trace=${encodeURIComponent(window.location.origin + url)}`;
+          const a = document.createElement("a");
+          a.href = traceViewUrl; a.target = "_blank";
+          a.className = "artifact-item";
+          a.innerHTML = `<span class="icon">🔍</span><span class="name">${name}</span><span>Open Trace Viewer ↗</span>`;
+          artifTraces.appendChild(a);
+        });
+      } else {
+        artifTraces.innerHTML = '<div class="artifact-empty">No traces captured.</div>';
+      }
+    }
+
+    // ── Init ───────────────────────────────────────────────────────────────────
+    loadPharmacies();
     </script>
   </body>
 </html>

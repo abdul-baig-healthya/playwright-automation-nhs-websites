@@ -6,6 +6,7 @@ const path = require("path");
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "dashboard-public")));
+app.use("/test-results", express.static(path.join(__dirname, "test-results")));
 
 const TEST_DATA_PATH = path.join(__dirname, "tests/fixtures/test-data.ts");
 const PHARMACIES_PATH = path.join(__dirname, "tests/fixtures/pharmacies.ts");
@@ -26,6 +27,7 @@ function readPharmacies() {
 let _testListCache = null;
 let _testListCacheAt = 0;
 const TEST_LIST_TTL_MS = 30_000;
+let lastRunStartTime = 0;
 
 function flattenSuites(suites, parentTitles = [], depth = 0) {
   const out = [];
@@ -273,6 +275,37 @@ function stopUI() {
   return { stopped: true };
 }
 
+// ── Artifact discovery ───────────────────────────────────────────────────────
+
+function findArtifactsAfter(since) {
+  const dir = path.join(__dirname, "test-results");
+  const artifacts = { videos: [], traces: [] };
+  if (!fs.existsSync(dir)) return artifacts;
+
+  function scan(d) {
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch (_) { return; }
+    for (const entry of entries) {
+      const full = path.join(d, entry.name);
+      if (entry.isDirectory()) {
+        scan(full);
+      } else if (entry.isFile()) {
+        try {
+          const stat = fs.statSync(full);
+          if (stat.mtimeMs >= since) {
+            const url = "/" + path.relative(__dirname, full).replace(/\\/g, "/");
+            if (entry.name.endsWith(".webm")) artifacts.videos.push(url);
+            else if (entry.name === "trace.zip") artifacts.traces.push(url);
+          }
+        } catch (_) {}
+      }
+    }
+  }
+
+  scan(dir);
+  return artifacts;
+}
+
 // ── Routes ───────────────────────────────────────────────────────────────────
 
 app.get("/api/test-data", (req, res) => {
@@ -334,11 +367,18 @@ app.get("/api/run-tests", (req, res) => {
   parts.push(label || (file ? `${file}${line ? ":" + line : ""}` : "all tests"));
   send("start", `Starting Playwright — ${parts.join(" · ")}...`);
 
-  const args = ["playwright", "test", "--reporter=list"];
+  const runStartTime = Date.now();
+  lastRunStartTime = runStartTime;
+
+  const args = ["playwright", "test", "--reporter=list", "--headed"];
   if (project) args.push(`--project=${project}`);
-  // Prefer file:line targeting (exact, no regex pitfalls). Fall back to grep.
-  if (file) args.push(line ? `${file}:${line}` : file);
-  else if (grep) args.push("--grep", grep);
+  // Prefer file:line targeting. Also allow grep within a file if no line number.
+  if (file) {
+    args.push(line ? `${file}:${line}` : file);
+    if (grep && !line) args.push("--grep", grep);
+  } else if (grep) {
+    args.push("--grep", grep);
+  }
 
   const proc = spawn("npx", args, {
     cwd: __dirname,
@@ -368,11 +408,16 @@ app.get("/api/run-tests", (req, res) => {
     const passed = (stdout.match(/\d+ passed/)?.[0] || "").trim();
     const failed = (stdout.match(/\d+ failed/)?.[0] || "").trim();
     const skipped = (stdout.match(/\d+ skipped/)?.[0] || "").trim();
-    send("done", { code, passed, failed, skipped, success: code === 0 });
+    const artifacts = findArtifactsAfter(runStartTime - 1000);
+    send("done", { code, passed, failed, skipped, success: code === 0, artifacts });
     res.end();
   });
 
   req.on("close", () => proc.kill());
+});
+
+app.get("/api/latest-artifacts", (req, res) => {
+  res.json(findArtifactsAfter(lastRunStartTime - 1000));
 });
 
 app.post("/api/launch-ui", (req, res) => {

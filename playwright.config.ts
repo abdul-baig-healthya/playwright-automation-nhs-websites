@@ -32,9 +32,9 @@ export default defineConfig({
   reporter: [["html", { open: "never" }], ["list"]],
 
   use: {
-    trace: "on-first-retry",
+    trace: "on",
     screenshot: "only-on-failure",
-    video: "on-first-retry",
+    video: "on",
     actionTimeout: 15_000,
     navigationTimeout: 30_000,
   },

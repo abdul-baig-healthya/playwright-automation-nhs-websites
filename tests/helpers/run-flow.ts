@@ -122,6 +122,7 @@ export async function runConditionFlow(
   page: Page,
   config: FlowConfig,
   user: typeof TEST_USER,
+  projectBaseURL?: string,
 ): Promise<void> {
   const conditionsPage = new ConditionsPage(page);
   const detailPage = new ConditionDetailPage(page);
@@ -131,7 +132,7 @@ export async function runConditionFlow(
   const booking = new BookingPage(page);
   const payment = new PaymentPage(page);
 
-  const baseUrl = (process.env.BASE_URL ?? "http://localhost:4005").replace(/\/$/, "");
+  const baseUrl = (projectBaseURL ?? process.env.BASE_URL ?? "http://localhost:4005").replace(/\/$/, "");
 
   // ── Step 1: Resolve condition href ────────────────────────────────────────
   let conditionHref: string;

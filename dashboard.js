@@ -8,6 +8,79 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "dashboard-public")));
 
 const TEST_DATA_PATH = path.join(__dirname, "tests/fixtures/test-data.ts");
+const PHARMACIES_PATH = path.join(__dirname, "tests/fixtures/pharmacies.ts");
+
+// ── Pharmacy + test discovery ─────────────────────────────────────────────────
+
+function readPharmacies() {
+  const src = fs.readFileSync(PHARMACIES_PATH, "utf8");
+  const list = [];
+  const re = /\{\s*name:\s*"([^"]+)"\s*,\s*baseURL:\s*"([^"]+)"(?:\s*,\s*ciSkip:\s*(true|false))?\s*\}/g;
+  let m;
+  while ((m = re.exec(src))) {
+    list.push({ name: m[1], baseURL: m[2], ciSkip: m[3] === "true" });
+  }
+  return list;
+}
+
+let _testListCache = null;
+let _testListCacheAt = 0;
+const TEST_LIST_TTL_MS = 30_000;
+
+function flattenSuites(suites, parentTitles = [], depth = 0) {
+  const out = [];
+  for (const s of suites || []) {
+    // Skip file-level suite title (depth 0); keep describe titles
+    const titles = depth === 0 ? parentTitles : [...parentTitles, s.title].filter(Boolean);
+    for (const spec of s.specs || []) {
+      out.push({
+        title: spec.title,
+        fullTitle: [...titles, spec.title].filter(Boolean).join(" > "),
+        file: spec.file || s.file || "",
+        line: spec.line || 0,
+      });
+    }
+    if (s.suites) out.push(...flattenSuites(s.suites, titles, depth + 1));
+  }
+  return out;
+}
+
+function listTests() {
+  if (_testListCache && Date.now() - _testListCacheAt < TEST_LIST_TTL_MS) {
+    return Promise.resolve(_testListCache);
+  }
+  return new Promise((resolve, reject) => {
+    const proc = spawn("npx", ["playwright", "test", "--list", "--reporter=json"], {
+      cwd: __dirname,
+      env: { ...process.env },
+    });
+    let out = "";
+    let err = "";
+    proc.stdout.on("data", (c) => (out += c.toString()));
+    proc.stderr.on("data", (c) => (err += c.toString()));
+    proc.on("close", () => {
+      try {
+        const json = JSON.parse(out);
+        // Dedupe by fullTitle (same test repeats per project)
+        const all = flattenSuites(json.suites || []);
+        const seen = new Set();
+        const unique = [];
+        for (const t of all) {
+          const key = `${t.file}::${t.fullTitle}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            unique.push(t);
+          }
+        }
+        _testListCache = unique;
+        _testListCacheAt = Date.now();
+        resolve(unique);
+      } catch (e) {
+        reject(new Error(`Failed to list tests: ${e.message}\n${err}`));
+      }
+    });
+  });
+}
 
 // ── Flow configs (mirrors flow-configs.ts — JS copy for dashboard) ────────────
 const FLOW_CONFIGS = [
@@ -223,6 +296,23 @@ app.get("/api/flow-configs", (_req, res) => {
   res.json(FLOW_CONFIGS);
 });
 
+app.get("/api/pharmacies", (_req, res) => {
+  try {
+    res.json(readPharmacies());
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/tests", async (_req, res) => {
+  try {
+    const tests = await listTests();
+    res.json(tests);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // SSE stream for running tests
 app.get("/api/run-tests", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
@@ -235,11 +325,20 @@ app.get("/api/run-tests", (req, res) => {
   };
 
   const grep = req.query.grep;
-  const label = grep ? `"${grep}"` : "all flows";
-  send("start", `Starting Playwright tests — ${label}...`);
+  const project = req.query.project;
+  const file = req.query.file;
+  const line = req.query.line;
+  const label = req.query.label;
+  const parts = [];
+  if (project) parts.push(project);
+  parts.push(label || (file ? `${file}${line ? ":" + line : ""}` : "all tests"));
+  send("start", `Starting Playwright — ${parts.join(" · ")}...`);
 
   const args = ["playwright", "test", "--reporter=list"];
-  if (grep) args.push("--grep", grep);
+  if (project) args.push(`--project=${project}`);
+  // Prefer file:line targeting (exact, no regex pitfalls). Fall back to grep.
+  if (file) args.push(line ? `${file}:${line}` : file);
+  else if (grep) args.push("--grep", grep);
 
   const proc = spawn("npx", args, {
     cwd: __dirname,

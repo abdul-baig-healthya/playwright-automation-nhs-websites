@@ -7,7 +7,7 @@ const nhsFlows = FLOW_CONFIGS.filter((c) => c.conditionJourneyType === "nhs");
 
 test.describe("NHS Condition Flows", () => {
   for (const config of nhsFlows) {
-    test(config.name, async ({ page }) => {
+    test(config.name, async ({ page, baseURL }) => {
       page.on("console", (msg) => {
         if (msg.type() === "error" || msg.type() === "warning") {
           console.log(`[browser ${msg.type()}] ${msg.text()}`);
@@ -18,7 +18,7 @@ test.describe("NHS Condition Flows", () => {
         if (res.status() >= 400) console.log(`[HTTP ${res.status()}] ${res.url()}`);
       });
 
-      await runConditionFlow(page, config, TEST_USER);
+      await runConditionFlow(page, config, TEST_USER, baseURL);
     });
   }
 });

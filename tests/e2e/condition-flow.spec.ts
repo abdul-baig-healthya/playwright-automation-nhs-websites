@@ -144,6 +144,7 @@ async function detectCurrentStep(page: Page): Promise<JourneyStep> {
 test.describe("Conditions flow", () => {
   test("complete conditions flow: listing → eligibility → questionnaire → signup → book", async ({
     page,
+    baseURL,
   }) => {
     page.on("console", (msg) => {
       const type = msg.type();
@@ -168,7 +169,7 @@ test.describe("Conditions flow", () => {
     const booking = new BookingPage(page);
     const payment = new PaymentPage(page);
 
-    const baseUrl = (process.env.BASE_URL ?? "http://localhost:4005").replace(
+    const baseUrl = (baseURL ?? process.env.BASE_URL ?? "http://localhost:4005").replace(
       /\/$/,
       "",
     );

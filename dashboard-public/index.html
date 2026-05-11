@@ -1,1129 +1,804 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NHS Pharmacy Test Dashboard</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Playwright Test Runner</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎭</text></svg>"
+    />
+    <style>
+      :root {
+        --bg: #0b0d12;
+        --panel: #131722;
+        --panel-2: #1a1f2e;
+        --border: #232a3b;
+        --text: #e6eaf2;
+        --muted: #8a93a6;
+        --accent: #5b8cff;
+        --accent-2: #6ee7b7;
+        --danger: #ef4444;
+        --warn: #f59e0b;
+        --ok: #22c55e;
+        --radius: 12px;
+        --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+          sans-serif;
+        font-size: 15px;
+        line-height: 1.5;
+        min-height: 100vh;
+      }
+      a {
+        color: var(--accent);
+      }
+      button {
+        font-family: inherit;
+      }
 
-    :root {
-      --bg: #0f1117;
-      --surface: #1a1d27;
-      --surface2: #21253a;
-      --border: #2e3250;
-      --accent: #4f6ef7;
-      --accent-hover: #6b84ff;
-      --success: #22c55e;
-      --error: #ef4444;
-      --warn: #f59e0b;
-      --text: #e2e8f0;
-      --muted: #94a3b8;
-      --radius: 10px;
-    }
+      /* Layout */
+      .shell {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 32px 28px 80px;
+      }
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 32px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .brand .logo {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #5b8cff, #6ee7b7);
+        display: grid;
+        place-items: center;
+        font-size: 22px;
+      }
+      .brand h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+      }
+      .brand p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .topbar .actions {
+        display: flex;
+        gap: 10px;
+      }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
+      /* Crumbs */
+      .crumbs {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+        color: var(--muted);
+        margin-bottom: 20px;
+        min-height: 24px;
+      }
+      .crumbs .item {
+        color: var(--muted);
+      }
+      .crumbs .item.active {
+        color: var(--text);
+      }
+      .crumbs .sep {
+        opacity: 0.4;
+      }
+      .crumbs .item.link {
+        cursor: pointer;
+        color: var(--accent);
+      }
+      .crumbs .item.link:hover {
+        text-decoration: underline;
+      }
 
-    header {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      padding: 16px 28px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
+      /* Buttons */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        background: var(--panel-2);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .btn:hover {
+        background: #232a3b;
+        border-color: #2f3851;
+      }
+      .btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #0b0d12;
+      }
+      .btn.primary:hover {
+        background: #7ba2ff;
+      }
+      .btn.ghost {
+        background: transparent;
+      }
+      .btn.danger {
+        background: transparent;
+        color: #fca5a5;
+        border-color: #3a2330;
+      }
+      .btn.danger:hover {
+        background: #2a1820;
+      }
+      .btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
 
-    header h1 {
-      font-size: 18px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
+      /* Headings */
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 20px;
+      }
+      .section-head h2 {
+        margin: 0;
+        font-size: 22px;
+        font-weight: 600;
+      }
+      .section-head p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
 
-    .logo-pill {
-      background: var(--accent);
-      color: #fff;
-      font-size: 11px;
-      font-weight: 700;
-      padding: 2px 8px;
-      border-radius: 20px;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-    }
+      /* Pharmacy grid */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 18px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 22px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        position: relative;
+      }
+      .card:hover {
+        border-color: var(--accent);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow);
+      }
+      .card .icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 14px;
+        background: var(--panel-2);
+        color: var(--accent);
+      }
+      .card h3 {
+        margin: 0 0 6px;
+        font-size: 17px;
+        font-weight: 600;
+      }
+      .card .url {
+        margin: 0;
+        font-size: 12px;
+        color: var(--muted);
+        word-break: break-all;
+      }
+      .card .badge {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        font-size: 11px;
+        padding: 3px 8px;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        color: var(--muted);
+      }
 
-    .run-btn {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      padding: 10px 22px;
-      border-radius: var(--radius);
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.15s, transform 0.1s;
-    }
-    .run-btn:hover:not(:disabled) { background: var(--accent-hover); }
-    .run-btn:active:not(:disabled) { transform: scale(0.97); }
-    .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+      /* Test list */
+      .toolbar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 18px;
+      }
+      .search {
+        flex: 1;
+        padding: 11px 14px;
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        font-size: 14px;
+        outline: none;
+      }
+      .search:focus {
+        border-color: var(--accent);
+      }
 
-    .run-btn svg { flex-shrink: 0; }
+      .test-list {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .test-group {
+        border-bottom: 1px solid var(--border);
+      }
+      .test-group:last-child {
+        border-bottom: none;
+      }
+      .test-group .group-title {
+        padding: 14px 20px;
+        background: var(--panel-2);
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .test-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        border-top: 1px solid var(--border);
+        gap: 14px;
+      }
+      .test-row:first-of-type {
+        border-top: none;
+      }
+      .test-row:hover {
+        background: var(--panel-2);
+      }
+      .test-info {
+        flex: 1;
+        min-width: 0;
+      }
+      .test-title {
+        font-size: 14px;
+        font-weight: 500;
+        margin-bottom: 3px;
+        word-break: break-word;
+      }
+      .test-meta {
+        font-size: 12px;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .test-row .btn {
+        padding: 7px 14px;
+        font-size: 13px;
+      }
 
-    .preview-btn {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--surface2);
-      color: var(--text);
-      border: 1px solid var(--border);
-      padding: 10px 18px;
-      border-radius: var(--radius);
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s;
-      text-decoration: none;
-    }
-    .preview-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-    .preview-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    .preview-btn.active { border-color: var(--success); color: var(--success); background: color-mix(in srgb, var(--success) 10%, transparent); }
+      /* Run panel (sticky bottom while running) */
+      .run-panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        margin-top: 20px;
+        overflow: hidden;
+      }
+      .run-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        background: var(--panel-2);
+        gap: 14px;
+      }
+      .run-head .meta {
+        font-size: 14px;
+      }
+      .run-head .meta .label {
+        color: var(--muted);
+        margin-right: 6px;
+      }
+      .badges {
+        display: inline-flex;
+        gap: 8px;
+      }
+      .badge-pill {
+        font-size: 12px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+      }
+      .badge-pill.ok {
+        color: #86efac;
+        border-color: #1f4232;
+      }
+      .badge-pill.fail {
+        color: #fca5a5;
+        border-color: #4a2330;
+      }
+      .badge-pill.skip {
+        color: #fcd34d;
+        border-color: #4a3a1c;
+      }
+      .badge-pill.running {
+        color: #93c5fd;
+        border-color: #1e3a5f;
+      }
+      .log {
+        background: #06080d;
+        color: #c9d1d9;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12.5px;
+        line-height: 1.55;
+        padding: 16px 20px;
+        max-height: 420px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .log .pass {
+        color: #86efac;
+      }
+      .log .fail {
+        color: #fca5a5;
+      }
+      .log .skip {
+        color: #fcd34d;
+      }
+      .log .dim {
+        color: #6b7280;
+      }
 
-    .ui-chip {
-      display: none;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--success);
-      background: color-mix(in srgb, var(--success) 10%, transparent);
-      border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
-      padding: 4px 12px;
-      border-radius: 20px;
-    }
-    .ui-chip.visible { display: flex; }
-    .ui-chip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); animation: pulse 1.4s infinite; }
+      /* Empty + loading states */
+      .empty,
+      .loading {
+        padding: 60px 20px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 14px;
+        background: var(--panel);
+        border: 1px dashed var(--border);
+        border-radius: var(--radius);
+      }
+      .spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        vertical-align: -3px;
+        margin-right: 8px;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
 
-    .header-actions { display: flex; align-items: center; gap: 10px; }
+      .hidden {
+        display: none !important;
+      }
 
-    .main {
-      display: grid;
-      grid-template-columns: 380px 1fr;
-      gap: 20px;
-      padding: 20px 24px;
-      flex: 1;
-      min-height: 0;
-    }
-
-    /* ── Config panel ── */
-    .config-panel {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      overflow-y: auto;
-      max-height: calc(100vh - 80px);
-      padding-right: 4px;
-    }
-
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-    }
-
-    .card-header {
-      background: var(--surface2);
-      padding: 10px 16px;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--muted);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .card-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
-
-    .field-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    .field { display: flex; flex-direction: column; gap: 4px; }
-    .field.full { grid-column: 1 / -1; }
-
-    label {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    input, select {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text);
-      font-size: 13px;
-      padding: 7px 10px;
-      outline: none;
-      transition: border-color 0.15s;
-      width: 100%;
-    }
-    input:focus, select:focus { border-color: var(--accent); }
-
-    /* condition selector pills */
-    .condition-pills {
-      display: flex;
-      gap: 8px;
-    }
-
-    .pill {
-      flex: 1;
-      text-align: center;
-      padding: 8px 6px;
-      border-radius: 8px;
-      border: 2px solid var(--border);
-      background: var(--bg);
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--muted);
-      transition: all 0.15s;
-      user-select: none;
-    }
-    .pill:hover { border-color: var(--accent); color: var(--text); }
-    .pill.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-
-    .pill .pill-icon { font-size: 18px; display: block; margin-bottom: 3px; }
-
-    /* toggle */
-    .toggle-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 2px 0;
-    }
-
-    .toggle-label {
-      font-size: 13px;
-      color: var(--text);
-    }
-
-    .toggle {
-      position: relative;
-      width: 38px;
-      height: 22px;
-      flex-shrink: 0;
-    }
-    .toggle input { opacity: 0; width: 0; height: 0; }
-    .slider {
-      position: absolute;
-      inset: 0;
-      background: var(--border);
-      border-radius: 22px;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .slider::before {
-      content: "";
-      position: absolute;
-      height: 16px;
-      width: 16px;
-      left: 3px;
-      bottom: 3px;
-      background: #fff;
-      border-radius: 50%;
-      transition: transform 0.2s;
-    }
-    .toggle input:checked + .slider { background: var(--accent); }
-    .toggle input:checked + .slider::before { transform: translateX(16px); }
-
-    .save-btn {
-      width: 100%;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 9px;
-      border-radius: var(--radius);
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s;
-      margin-top: 4px;
-    }
-    .save-btn:hover { border-color: var(--accent); color: var(--accent); }
-    .save-btn.saved { border-color: var(--success); color: var(--success); }
-
-    /* ── Results panel ── */
-    .results-panel {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      overflow: hidden;
-    }
-
-    /* Status bar */
-    .status-bar {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 14px 18px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .status-indicator {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: var(--muted);
-      flex-shrink: 0;
-      transition: background 0.3s;
-    }
-    .status-indicator.running {
-      background: var(--warn);
-      animation: pulse 1s infinite;
-    }
-    .status-indicator.success { background: var(--success); }
-    .status-indicator.fail { background: var(--error); }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-
-    .status-text { flex: 1; font-size: 14px; font-weight: 600; }
-    .status-sub { font-size: 12px; color: var(--muted); }
-
-    .badge-row { display: flex; gap: 8px; margin-left: auto; flex-shrink: 0; }
-
-    .badge {
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 700;
-      border: 1px solid transparent;
-    }
-    .badge.pass { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); border-color: color-mix(in srgb, var(--success) 30%, transparent); }
-    .badge.fail { background: color-mix(in srgb, var(--error) 15%, transparent); color: var(--error); border-color: color-mix(in srgb, var(--error) 30%, transparent); }
-    .badge.skip { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
-
-    /* Steps timeline */
-    .steps-section {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-    }
-
-    .steps-header {
-      background: var(--surface2);
-      padding: 10px 16px;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--muted);
-    }
-
-    .steps-list {
-      padding: 12px 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .step-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      padding: 8px 10px;
-      border-radius: 6px;
-      background: transparent;
-      transition: background 0.1s;
-    }
-    .step-item:hover { background: var(--surface2); }
-
-    .step-icon {
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 12px;
-      flex-shrink: 0;
-      margin-top: 1px;
-    }
-    .step-icon.pass { background: color-mix(in srgb, var(--success) 20%, transparent); color: var(--success); }
-    .step-icon.fail { background: color-mix(in srgb, var(--error) 20%, transparent); color: var(--error); }
-    .step-icon.running { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); animation: pulse 1s infinite; }
-    .step-icon.pending { background: var(--surface2); color: var(--muted); }
-
-    .step-content { flex: 1; min-width: 0; }
-    .step-name { font-size: 13px; font-weight: 600; }
-    .step-detail { font-size: 11px; color: var(--muted); margin-top: 2px; word-break: break-all; }
-
-    /* Log output */
-    .log-section {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
-    }
-
-    .log-header {
-      background: var(--surface2);
-      padding: 10px 16px;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--muted);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-shrink: 0;
-    }
-
-    .clear-btn {
-      background: none;
-      border: none;
-      color: var(--muted);
-      font-size: 11px;
-      cursor: pointer;
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-    .clear-btn:hover { background: var(--border); color: var(--text); }
-
-    .log-output {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px 16px;
-      font-family: "SF Mono", "Fira Code", monospace;
-      font-size: 12px;
-      line-height: 1.6;
-      min-height: 200px;
-      max-height: 340px;
-    }
-
-    .log-line { display: flex; gap: 8px; padding: 1px 0; }
-    .log-line .ts { color: var(--muted); flex-shrink: 0; }
-    .log-line .msg { flex: 1; word-break: break-all; }
-
-    .log-line.pass .msg { color: var(--success); }
-    .log-line.fail .msg { color: var(--error); }
-    .log-line.warn .msg { color: var(--warn); }
-    .log-line.info .msg { color: #60a5fa; }
-    .log-line.dim .msg { color: var(--muted); }
-
-    .empty-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 180px;
-      color: var(--muted);
-      gap: 8px;
-      font-size: 13px;
-    }
-    .empty-state .big { font-size: 32px; }
-
-    ::-webkit-scrollbar { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-  </style>
-</head>
-<body>
-
-<header>
-  <h1>
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg>
-    NHS Pharmacy E2E Tests
-    <span class="logo-pill">Playwright</span>
-  </h1>
-
-  <div class="header-actions">
-    <span class="ui-chip" id="uiChip">
-      <span class="ui-chip-dot"></span>
-      UI Mode Live
-    </span>
-
-    <button class="preview-btn" id="previewBtn" onclick="togglePreview()">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M20.188 10.934C21.236 11.851 21.236 12.149 20.188 13.066 18.768 14.25 15.636 17 12 17s-6.768-2.75-8.188-3.934C2.764 12.149 2.764 11.851 3.812 10.934 5.232 9.75 8.364 7 12 7s6.768 2.75 8.188 3.934z"/></svg>
-      <span id="previewBtnLabel">Open Preview</span>
-    </button>
-
-    <button class="run-btn" id="runBtn" onclick="runTests()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-      Run Tests
-    </button>
-  </div>
-</header>
-
-<div class="main">
-
-  <!-- ── Config Panel ── -->
-  <div class="config-panel">
-
-    <!-- Condition selector -->
-    <div class="card">
-      <div class="card-header">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
-        Test Condition
-      </div>
-      <div class="card-body">
-        <div class="condition-pills">
-          <div class="pill" id="pill-nhs" onclick="selectCondition('nhs')">
-            <span class="pill-icon">🏥</span>
-            NHS
-          </div>
-          <div class="pill" id="pill-private" onclick="selectCondition('private')">
-            <span class="pill-icon">💊</span>
-            Private
-          </div>
-          <div class="pill" id="pill-lifestyle" onclick="selectCondition('lifestyle')">
-            <span class="pill-icon">🌿</span>
-            Lifestyle
+      .footer-note {
+        margin-top: 40px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo">🎭</div>
+          <div>
+            <h1>Playwright Test Runner</h1>
+            <p>Pick a pharmacy, then run any test</p>
           </div>
         </div>
-        <div style="font-size:11px; color:var(--muted); text-align:center; margin-top:2px;" id="conditionHint"></div>
-      </div>
-    </div>
+        <div class="actions">
+          <button class="btn ghost" id="btn-ui" title="Open Playwright UI">
+            🪟 Open Preview
+          </button>
+        </div>
+      </header>
 
-    <!-- Patient details -->
-    <div class="card">
-      <div class="card-header">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        Patient Details
-      </div>
-      <div class="card-body">
-        <div class="field-row">
-          <div class="field">
-            <label>First Name</label>
-            <input id="firstName" type="text" />
-          </div>
-          <div class="field">
-            <label>Last Name</label>
-            <input id="lastName" type="text" />
-          </div>
-        </div>
-        <div class="field-row">
-          <div class="field">
-            <label>Gender</label>
-            <select id="gender">
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Postcode</label>
-            <input id="postcode" type="text" />
-          </div>
-        </div>
-        <div class="field-row">
-          <div class="field">
-            <label>DOB Day</label>
-            <input id="dobDay" type="text" placeholder="01" maxlength="2" />
-          </div>
-          <div class="field">
-            <label>DOB Month</label>
-            <input id="dobMonth" type="text" placeholder="01" maxlength="2" />
-          </div>
-        </div>
-        <div class="field-row">
-          <div class="field">
-            <label>DOB Year</label>
-            <input id="dobYear" type="text" placeholder="1990" maxlength="4" />
-          </div>
-          <div class="field">
-            <label>Guardian Name</label>
-            <input id="guardianName" type="text" />
-          </div>
-        </div>
-        <div class="field-row">
-          <div class="field">
-            <label>Email</label>
-            <input id="email" type="email" />
-          </div>
-          <div class="field">
-            <label>Phone</label>
-            <input id="phone" type="text" />
-          </div>
-        </div>
-      </div>
-    </div>
+      <nav class="crumbs" id="crumbs"></nav>
 
-    <!-- Booking preferences -->
-    <div class="card">
-      <div class="card-header">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        Booking Preferences
-      </div>
-      <div class="card-body">
-        <div class="field-row">
-          <div class="field">
-            <label>Appointment Type</label>
-            <select id="appointmentType">
-              <option value="Video">Video</option>
-              <option value="Face to Face">Face to Face</option>
-              <option value="Phone call">Phone Call</option>
-            </select>
+      <!-- View 1: pharmacies -->
+      <section id="view-pharmacies">
+        <div class="section-head">
+          <div>
+            <h2>Select a pharmacy</h2>
+            <p>Tests will run against the chosen pharmacy's site</p>
           </div>
-          <div class="field">
-            <label>Max Date Attempts</label>
-            <input id="maxDateAttempts" type="number" min="1" max="30" />
+        </div>
+        <div id="pharmacy-grid" class="grid">
+          <div class="loading"><span class="spinner"></span>Loading pharmacies...</div>
+        </div>
+      </section>
+
+      <!-- View 2: tests -->
+      <section id="view-tests" class="hidden">
+        <div class="section-head">
+          <div>
+            <h2 id="tests-title">Tests</h2>
+            <p id="tests-subtitle"></p>
           </div>
+          <div style="display: flex; gap: 10px">
+            <button class="btn ghost" id="btn-back">← Pharmacies</button>
+            <button class="btn primary" id="btn-run-all">▶ Run all tests</button>
+          </div>
+        </div>
+        <div class="toolbar">
+          <input
+            id="search"
+            type="text"
+            class="search"
+            placeholder="Search tests by name or file..."
+          />
+        </div>
+        <div id="test-list" class="test-list">
+          <div class="loading"><span class="spinner"></span>Discovering tests...</div>
         </div>
 
-        <div class="toggle-row">
-          <span class="toggle-label">Use Next Available Slot</span>
-          <label class="toggle">
-            <input type="checkbox" id="useNextAvailableSlot" />
-            <span class="slider"></span>
-          </label>
-        </div>
-
-        <div id="manualSlotFields">
-          <div class="field-row" style="margin-top:8px;">
-            <div class="field">
-              <label>Preferred Month</label>
-              <input id="preferredMonth" type="text" placeholder="May 2026" />
+        <!-- Run output -->
+        <div id="run-panel" class="run-panel hidden">
+          <div class="run-head">
+            <div class="meta">
+              <span class="label">Running:</span>
+              <strong id="run-label">—</strong>
             </div>
-            <div class="field">
-              <label>Preferred Date</label>
-              <input id="preferredDate" type="text" placeholder="9 May" />
+            <div style="display: flex; gap: 12px; align-items: center">
+              <span class="badges" id="run-badges"></span>
+              <button class="btn danger" id="btn-stop">Stop</button>
             </div>
           </div>
-          <div class="field-row">
-            <div class="field">
-              <label>Preferred Time</label>
-              <input id="preferredTime" type="text" placeholder="07:00 AM" />
-            </div>
-          </div>
+          <pre id="log" class="log"></pre>
         </div>
+      </section>
 
-        <div class="toggle-row">
-          <span class="toggle-label">Auto Move to Next Date</span>
-          <label class="toggle">
-            <input type="checkbox" id="autoMoveToNextDate" />
-            <span class="slider"></span>
-          </label>
-        </div>
-      </div>
+      <p class="footer-note">
+        Test data lives in <code>tests/fixtures/test-data.ts</code> — no manual
+        entry required.
+      </p>
     </div>
 
-    <!-- Payment -->
-    <div class="card">
-      <div class="card-header">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-        Payment Details
-      </div>
-      <div class="card-body">
-        <div class="field-row">
-          <div class="field full">
-            <label>Cardholder Name</label>
-            <input id="cardholderName" type="text" />
+    <script>
+      // ── State ──────────────────────────────────────────────────────────────
+      const state = {
+        pharmacies: [],
+        tests: [],
+        selectedPharmacy: null,
+        running: false,
+        es: null,
+      };
+
+      // ── Helpers ────────────────────────────────────────────────────────────
+      const $ = (id) => document.getElementById(id);
+      const escapeHTML = (s) =>
+        String(s ?? "").replace(/[&<>"']/g, (c) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        }[c]));
+
+      function setView(name) {
+        $("view-pharmacies").classList.toggle("hidden", name !== "pharmacies");
+        $("view-tests").classList.toggle("hidden", name !== "tests");
+        renderCrumbs();
+      }
+
+      function renderCrumbs() {
+        const c = $("crumbs");
+        const isTests = !$("view-tests").classList.contains("hidden");
+        if (isTests && state.selectedPharmacy) {
+          c.innerHTML = `
+            <span class="item link" onclick="goPharmacies()">Pharmacies</span>
+            <span class="sep">/</span>
+            <span class="item active">${escapeHTML(state.selectedPharmacy.name)}</span>
+          `;
+        } else {
+          c.innerHTML = `<span class="item active">Pharmacies</span>`;
+        }
+      }
+
+      window.goPharmacies = function () {
+        state.selectedPharmacy = null;
+        setView("pharmacies");
+      };
+
+      // ── Load pharmacies ────────────────────────────────────────────────────
+      async function loadPharmacies() {
+        try {
+          const res = await fetch("/api/pharmacies");
+          state.pharmacies = await res.json();
+        } catch (e) {
+          $("pharmacy-grid").innerHTML =
+            '<div class="empty">Failed to load pharmacies. Is the dashboard server running?</div>';
+          return;
+        }
+        renderPharmacies();
+      }
+
+      function pharmacyInitials(name) {
+        return name
+          .split(" ")
+          .map((w) => w[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase();
+      }
+
+      function renderPharmacies() {
+        const grid = $("pharmacy-grid");
+        if (!state.pharmacies.length) {
+          grid.innerHTML = '<div class="empty">No pharmacies configured.</div>';
+          return;
+        }
+        grid.innerHTML = state.pharmacies
+          .map(
+            (p) => `
+          <div class="card" onclick='selectPharmacy(${JSON.stringify(p)})'>
+            ${p.ciSkip ? '<span class="badge">local</span>' : ""}
+            <div class="icon">${escapeHTML(pharmacyInitials(p.name))}</div>
+            <h3>${escapeHTML(p.name)}</h3>
+            <p class="url">${escapeHTML(p.baseURL)}</p>
           </div>
-        </div>
-        <div class="field-row">
-          <div class="field full">
-            <label>Card Number</label>
-            <input id="cardNumber" type="text" maxlength="19" />
-          </div>
-        </div>
-        <div class="field-row">
-          <div class="field">
-            <label>Expiry (MM/YY)</label>
-            <input id="expiryDate" type="text" placeholder="01/32" maxlength="5" />
-          </div>
-          <div class="field">
-            <label>CVV</label>
-            <input id="securityCode" type="text" maxlength="4" />
-          </div>
-        </div>
-      </div>
-    </div>
+        `
+          )
+          .join("");
+      }
 
-    <button class="save-btn" id="saveBtn" onclick="saveConfig()">Save Configuration</button>
+      window.selectPharmacy = function (pharmacy) {
+        state.selectedPharmacy = pharmacy;
+        $("tests-title").textContent = pharmacy.name;
+        $("tests-subtitle").textContent = pharmacy.baseURL;
+        setView("tests");
+        loadTests();
+      };
 
-  </div>
+      // ── Load tests ─────────────────────────────────────────────────────────
+      async function loadTests() {
+        const list = $("test-list");
+        list.innerHTML =
+          '<div class="loading"><span class="spinner"></span>Discovering tests...</div>';
+        try {
+          const res = await fetch("/api/tests");
+          if (!res.ok) throw new Error(await res.text());
+          state.tests = await res.json();
+        } catch (e) {
+          list.innerHTML = `<div class="empty">Failed to load tests: ${escapeHTML(
+            e.message
+          )}</div>`;
+          return;
+        }
+        renderTests();
+      }
 
-  <!-- ── Results Panel ── -->
-  <div class="results-panel">
+      function renderTests() {
+        const filter = $("search").value.trim().toLowerCase();
+        const filtered = state.tests.filter(
+          (t) =>
+            !filter ||
+            t.fullTitle.toLowerCase().includes(filter) ||
+            (t.file || "").toLowerCase().includes(filter)
+        );
+        if (!filtered.length) {
+          $("test-list").innerHTML =
+            '<div class="empty">No matching tests.</div>';
+          return;
+        }
+        // Group by file
+        const groups = {};
+        for (const t of filtered) {
+          const f = t.file || "(unknown)";
+          (groups[f] = groups[f] || []).push(t);
+        }
+        $("test-list").innerHTML = Object.entries(groups)
+          .map(
+            ([file, tests]) => `
+              <div class="test-group">
+                <div class="group-title">${escapeHTML(file)}</div>
+                ${tests
+                  .map(
+                    (t) => `
+                  <div class="test-row">
+                    <div class="test-info">
+                      <div class="test-title">${escapeHTML(t.fullTitle)}</div>
+                      <div class="test-meta">${escapeHTML(t.file)}${
+                      t.line ? ":" + t.line : ""
+                    }</div>
+                    </div>
+                    <button class="btn primary" onclick='runTest(${JSON.stringify(
+                      { file: t.file, line: t.line, label: t.fullTitle }
+                    )})' ${state.running ? "disabled" : ""}>▶ Run</button>
+                  </div>
+                `
+                  )
+                  .join("")}
+              </div>
+            `
+          )
+          .join("");
+      }
 
-    <!-- Status -->
-    <div class="status-bar">
-      <div class="status-indicator" id="statusDot"></div>
-      <div>
-        <div class="status-text" id="statusText">Ready to run</div>
-        <div class="status-sub" id="statusSub">Configure your test settings and click "Run Tests"</div>
-      </div>
-      <div class="badge-row" id="badgeRow" style="display:none;">
-        <span class="badge pass" id="badgePass" style="display:none;"></span>
-        <span class="badge fail" id="badgeFail" style="display:none;"></span>
-        <span class="badge skip" id="badgeSkip" style="display:none;"></span>
-      </div>
-    </div>
+      $("search").addEventListener("input", renderTests);
 
-    <!-- Journey Steps -->
-    <div class="steps-section">
-      <div class="steps-header">Journey Progress</div>
-      <div class="steps-list" id="stepsList">
-        <div class="empty-state">
-          <span class="big">🗺️</span>
-          <span>Steps will appear here once tests are running</span>
-        </div>
-      </div>
-    </div>
+      // ── Run tests ──────────────────────────────────────────────────────────
+      window.runTest = function (t) {
+        startRun({ file: t.file, line: t.line, label: t.label });
+      };
+      $("btn-run-all").addEventListener("click", () =>
+        startRun({ label: `All tests · ${state.selectedPharmacy.name}` })
+      );
 
-    <!-- Log -->
-    <div class="log-section">
-      <div class="log-header">
-        <span>Live Output</span>
-        <button class="clear-btn" onclick="clearLog()">Clear</button>
-      </div>
-      <div class="log-output" id="logOutput">
-        <div class="empty-state">
-          <span class="big">📋</span>
-          <span>Logs will stream here in real time</span>
-        </div>
-      </div>
-    </div>
-
-  </div>
-</div>
-
-<script>
-  // ── State ────────────────────────────────────────────────────────────────
-  let activeCondition = "nhs";
-  let running = false;
-
-  const conditionNames = {
-    nhs: "Shingles (NHS)",
-    private: "Weight Management (Private)",
-    lifestyle: "Erectile Dysfunction (Lifestyle)"
-  };
-
-  // ── Init ─────────────────────────────────────────────────────────────────
-  async function init() {
-    try {
-      const res = await fetch("/api/test-data");
-      const data = await res.json();
-      populateForm(data);
-    } catch (e) {
-      appendLog("Failed to load config: " + e.message, "fail");
-    }
-  }
-
-  function populateForm(data) {
-    const u = data.user;
-    document.getElementById("firstName").value = u.firstName || "";
-    document.getElementById("lastName").value = u.lastName || "";
-    document.getElementById("gender").value = u.gender || "male";
-    document.getElementById("postcode").value = u.postcode || "";
-    document.getElementById("dobDay").value = u.dobDay || "";
-    document.getElementById("dobMonth").value = u.dobMonth || "";
-    document.getElementById("dobYear").value = u.dobYear || "";
-    document.getElementById("email").value = u.email || "";
-    document.getElementById("phone").value = u.phone || "";
-    document.getElementById("guardianName").value = u.guardianName || "";
-
-    const p = data.payment;
-    document.getElementById("cardholderName").value = p.cardholderName || "";
-    document.getElementById("cardNumber").value = p.cardNumber || "";
-    document.getElementById("expiryDate").value = p.expiryDate || "";
-    document.getElementById("securityCode").value = p.securityCode || "";
-
-    const b = data.booking;
-    document.getElementById("appointmentType").value = b.appointmentType || "Video";
-    document.getElementById("useNextAvailableSlot").checked = b.useNextAvailableSlot;
-    document.getElementById("preferredMonth").value = b.preferredMonth || "";
-    document.getElementById("preferredDate").value = b.preferredDate || "";
-    document.getElementById("preferredTime").value = b.preferredTime || "";
-    document.getElementById("autoMoveToNextDate").checked = b.autoMoveToNextDate;
-    document.getElementById("maxDateAttempts").value = b.maxDateAttempts || 10;
-
-    selectCondition(data.condition.journeyType || "nhs");
-    toggleManualSlotFields();
-  }
-
-  // ── Condition pills ──────────────────────────────────────────────────────
-  function selectCondition(type) {
-    activeCondition = type;
-    ["nhs", "private", "lifestyle"].forEach((t) => {
-      document.getElementById("pill-" + t).classList.toggle("active", t === type);
-    });
-    document.getElementById("conditionHint").textContent = conditionNames[type] || "";
-  }
-
-  // ── Toggle manual slot fields ────────────────────────────────────────────
-  document.getElementById("useNextAvailableSlot").addEventListener("change", toggleManualSlotFields);
-
-  function toggleManualSlotFields() {
-    const useNext = document.getElementById("useNextAvailableSlot").checked;
-    document.getElementById("manualSlotFields").style.display = useNext ? "none" : "block";
-  }
-
-  // ── Save ─────────────────────────────────────────────────────────────────
-  async function saveConfig() {
-    const btn = document.getElementById("saveBtn");
-    try {
-      const res = await fetch("/api/test-data", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildPayload()),
+      $("btn-stop").addEventListener("click", () => {
+        if (state.es) state.es.close();
+        state.running = false;
+        appendLog("\n— Stopped by user —\n", "fail");
+        finishRun({ stopped: true });
       });
-      if (res.ok) {
-        btn.textContent = "Saved!";
-        btn.classList.add("saved");
-        setTimeout(() => {
-          btn.textContent = "Save Configuration";
-          btn.classList.remove("saved");
-        }, 2000);
-      }
-    } catch (e) {
-      alert("Save failed: " + e.message);
-    }
-  }
 
-  // ── Steps tracking ───────────────────────────────────────────────────────
-  const KNOWN_STEPS = [
-    { key: "conditions",    label: "Find Condition",      detail: "Navigating to conditions list" },
-    { key: "eligibility",   label: "Eligibility Check",   detail: "Filling gender & date of birth" },
-    { key: "assessment",    label: "Start Assessment",    detail: "Beginning questionnaire flow" },
-    { key: "questionnaire", label: "Questionnaire",       detail: "Answering clinical questions" },
-    { key: "signup",        label: "Patient Details",     detail: "Entering personal information" },
-    { key: "booking",       label: "Appointment Booking", detail: "Selecting date & time slot" },
-    { key: "payment",       label: "Payment",             detail: "Completing payment" },
-    { key: "success",       label: "Booking Confirmed",   detail: "Journey complete" },
-  ];
+      $("btn-back").addEventListener("click", () => {
+        if (state.running) {
+          if (!confirm("A test is running. Stop and go back?")) return;
+          if (state.es) state.es.close();
+          state.running = false;
+        }
+        goPharmacies();
+      });
 
-  let stepStates = {};
+      function startRun({ file, line, label }) {
+        if (state.running) return;
+        state.running = true;
+        $("run-panel").classList.remove("hidden");
+        $("log").textContent = "";
+        $("run-label").textContent = label;
+        setBadges([{ kind: "running", text: "running…" }]);
+        renderTests(); // disable run buttons
 
-  function initSteps() {
-    stepStates = {};
-    KNOWN_STEPS.forEach((s) => (stepStates[s.key] = "pending"));
-    renderSteps();
-  }
+        const params = new URLSearchParams();
+        params.set("project", state.selectedPharmacy.name);
+        if (file) params.set("file", file);
+        if (line) params.set("line", line);
+        if (label) params.set("label", label);
 
-  function detectStepFromLog(line) {
-    const l = line.toLowerCase();
-    if (l.includes("navigate") || l.includes("/conditions")) return "conditions";
-    if (l.includes("eligibility") || l.includes("gender") || l.includes("dob")) return "eligibility";
-    if (l.includes("start assessment") || l.includes("assessment")) return "assessment";
-    if (l.includes("questionnaire") || l.includes("answerall")) return "questionnaire";
-    if (l.includes("sign-up") || l.includes("signup") || l.includes("patient details") || l.includes("pds")) return "signup";
-    if (l.includes("booking") || l.includes("appointment")) return "booking";
-    if (l.includes("payment") || l.includes("pay £")) return "payment";
-    if (l.includes("booking confirmed") || l.includes("success") || l.includes("booking success")) return "success";
-    return null;
-  }
+        const es = new EventSource(`/api/run-tests?${params.toString()}`);
+        state.es = es;
 
-  function markStep(key, state) {
-    if (!stepStates.hasOwnProperty(key)) return;
-    if (state === "running") {
-      // don't overwrite pass/fail
-      if (stepStates[key] !== "pass" && stepStates[key] !== "fail") {
-        stepStates[key] = "running";
-      }
-    } else {
-      stepStates[key] = state;
-    }
-    renderSteps();
-  }
-
-  function renderSteps() {
-    const list = document.getElementById("stepsList");
-    list.innerHTML = KNOWN_STEPS.map((s) => {
-      const state = stepStates[s.key] || "pending";
-      const icons = { pass: "✓", fail: "✗", running: "…", pending: "○" };
-      const icon = icons[state] || "○";
-      return `
-        <div class="step-item">
-          <div class="step-icon ${state}">${icon}</div>
-          <div class="step-content">
-            <div class="step-name">${s.label}</div>
-            <div class="step-detail">${s.detail}</div>
-          </div>
-        </div>`;
-    }).join("");
-  }
-
-  // ── Log output ───────────────────────────────────────────────────────────
-  let logLines = [];
-  let logEmpty = true;
-
-  function appendLog(msg, cls = "") {
-    const out = document.getElementById("logOutput");
-    if (logEmpty) {
-      out.innerHTML = "";
-      logEmpty = false;
-    }
-    const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    const div = document.createElement("div");
-    div.className = "log-line " + cls;
-    div.innerHTML = `<span class="ts">${now}</span><span class="msg">${escHtml(msg)}</span>`;
-    out.appendChild(div);
-    out.scrollTop = out.scrollHeight;
-  }
-
-  function clearLog() {
-    const out = document.getElementById("logOutput");
-    out.innerHTML = `<div class="empty-state"><span class="big">📋</span><span>Logs will stream here in real time</span></div>`;
-    logEmpty = true;
-  }
-
-  function escHtml(str) {
-    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
-
-  function classifyLog(line) {
-    const l = line.toLowerCase();
-    if (l.includes("✔") || l.includes("passed") || l.includes("success") || l.includes("confirmed")) return "pass";
-    if (l.includes("✗") || l.includes("failed") || l.includes("error") || l.includes("× ")) return "fail";
-    if (l.includes("⚠") || l.includes("warn") || l.includes("stuck") || l.includes("retry")) return "warn";
-    if (l.includes("→") || l.includes("🔍") || l.includes("step")) return "info";
-    return "dim";
-  }
-
-  // ── Run tests ────────────────────────────────────────────────────────────
-  async function runTests() {
-    if (running) return;
-
-    // Auto-save first
-    await saveConfig();
-
-    running = true;
-    const btn = document.getElementById("runBtn");
-    btn.disabled = true;
-    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Running…`;
-
-    // Reset UI
-    const dot = document.getElementById("statusDot");
-    dot.className = "status-indicator running";
-    document.getElementById("statusText").textContent = "Running tests…";
-    document.getElementById("statusSub").textContent = "Please wait, this may take a few minutes";
-    document.getElementById("badgeRow").style.display = "none";
-
-    clearLog();
-    initSteps();
-    let currentStep = null;
-
-    const evtSource = new EventSource("/api/run-tests");
-
-    evtSource.onmessage = (e) => {
-      const { type, data } = JSON.parse(e.data);
-
-      if (type === "start") {
-        appendLog(data, "info");
-        return;
-      }
-
-      if (type === "log") {
-        const cls = classifyLog(data);
-        appendLog(data, cls);
-
-        // Step detection
-        const step = detectStepFromLog(data);
-        if (step) {
-          if (currentStep && currentStep !== step) {
-            markStep(currentStep, "pass");
+        es.addEventListener("message", (ev) => {
+          let msg;
+          try {
+            msg = JSON.parse(ev.data);
+          } catch {
+            return;
           }
-          currentStep = step;
-          markStep(step, "running");
-        }
+          if (msg.type === "start") {
+            appendLog(msg.data + "\n", "dim");
+          } else if (msg.type === "log") {
+            appendLog(msg.data + "\n");
+          } else if (msg.type === "done") {
+            es.close();
+            state.es = null;
+            state.running = false;
+            const d = msg.data || {};
+            const badges = [];
+            if (d.passed) badges.push({ kind: "ok", text: d.passed });
+            if (d.failed) badges.push({ kind: "fail", text: d.failed });
+            if (d.skipped) badges.push({ kind: "skip", text: d.skipped });
+            if (!badges.length)
+              badges.push({
+                kind: d.success ? "ok" : "fail",
+                text: d.success ? "✓ passed" : "✗ failed",
+              });
+            setBadges(badges);
+            finishRun({ success: d.success });
+          }
+        });
 
-        // Mark success
-        if (data.toLowerCase().includes("booking success") || data.toLowerCase().includes("booking confirmed")) {
-          if (currentStep) markStep(currentStep, "pass");
-          markStep("success", "pass");
-        }
-
-        // Mark fail
-        if ((data.includes("✗") || data.toLowerCase().includes("failed")) && currentStep) {
-          markStep(currentStep, "fail");
-        }
-        return;
+        es.addEventListener("error", () => {
+          if (!state.running) return; // closed intentionally
+          appendLog("\n[stream closed]\n", "fail");
+          state.running = false;
+          finishRun({ error: true });
+        });
       }
 
-      if (type === "done") {
-        evtSource.close();
-        running = false;
-        btn.disabled = false;
-        btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run Tests`;
-
-        if (currentStep && stepStates[currentStep] === "running") {
-          markStep(currentStep, data.success ? "pass" : "fail");
-        }
-
-        dot.className = "status-indicator " + (data.success ? "success" : "fail");
-        document.getElementById("statusText").textContent = data.success
-          ? "All tests passed!"
-          : "Tests finished with failures";
-        document.getElementById("statusSub").textContent = data.success
-          ? "The full journey completed successfully."
-          : "Check the output below for details.";
-
-        const br = document.getElementById("badgeRow");
-        br.style.display = "flex";
-
-        const bp = document.getElementById("badgePass");
-        const bf = document.getElementById("badgeFail");
-        const bs = document.getElementById("badgeSkip");
-
-        if (data.passed) { bp.textContent = "✓ " + data.passed; bp.style.display = ""; }
-        else bp.style.display = "none";
-        if (data.failed) { bf.textContent = "✗ " + data.failed; bf.style.display = ""; }
-        else bf.style.display = "none";
-        if (data.skipped) { bs.textContent = "⟳ " + data.skipped; bs.style.display = ""; }
-        else bs.style.display = "none";
+      function finishRun() {
+        renderTests(); // re-enable buttons
       }
-    };
 
-    evtSource.onerror = () => {
-      evtSource.close();
-      running = false;
-      btn.disabled = false;
-      btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run Tests`;
-      document.getElementById("statusDot").className = "status-indicator fail";
-      document.getElementById("statusText").textContent = "Connection error";
-      document.getElementById("statusSub").textContent = "Could not connect to the dashboard server";
-      appendLog("Connection to server lost", "fail");
-    };
-  }
+      function setBadges(badges) {
+        $("run-badges").innerHTML = badges
+          .map(
+            (b) =>
+              `<span class="badge-pill ${b.kind}">${escapeHTML(b.text)}</span>`
+          )
+          .join("");
+      }
 
-  // ── Playwright UI Preview ─────────────────────────────────────────────────
-  let uiRunning = false;
-  let uiPollTimer = null;
+      function appendLog(text, cls) {
+        const log = $("log");
+        const span = document.createElement("span");
+        if (cls) span.className = cls;
+        // Color hints
+        if (!cls) {
+          if (/✓|passed/i.test(text)) span.className = "pass";
+          else if (/✗|✘|failed|error/i.test(text)) span.className = "fail";
+          else if (/skipped/i.test(text)) span.className = "skip";
+        }
+        span.textContent = text;
+        log.appendChild(span);
+        log.scrollTop = log.scrollHeight;
+      }
 
-  async function togglePreview() {
-    if (uiRunning) {
-      await stopPreview();
-    } else {
-      await launchPreview();
-    }
-  }
-
-  async function launchPreview() {
-    const btn = document.getElementById("previewBtn");
-    const label = document.getElementById("previewBtnLabel");
-    btn.disabled = true;
-    label.textContent = "Starting…";
-
-    // Save config first so UI picks up latest settings
-    try {
-      const payload = buildPayload();
-      await fetch("/api/launch-ui", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      // ── Playwright UI button ──────────────────────────────────────────────
+      $("btn-ui").addEventListener("click", async () => {
+        const btn = $("btn-ui");
+        btn.disabled = true;
+        btn.textContent = "Launching…";
+        try {
+          const res = await fetch("/api/launch-ui", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+          });
+          const data = await res.json();
+          const port = data.port || 8081;
+          // Brief delay to let UI server boot
+          setTimeout(() => {
+            window.open(`http://localhost:${port}`, "_blank");
+            btn.disabled = false;
+            btn.textContent = "🪟 Open Preview";
+          }, 1500);
+        } catch (e) {
+          alert("Failed to launch Playwright UI: " + e.message);
+          btn.disabled = false;
+          btn.textContent = "🪟 Open Preview";
+        }
       });
-    } catch (e) {
-      appendLog("Failed to launch Playwright UI: " + e.message, "fail");
-      btn.disabled = false;
-      label.textContent = "Open Preview";
-      return;
-    }
 
-    uiRunning = true;
-    btn.classList.add("active");
-    label.textContent = "Stop Preview";
-    btn.disabled = false;
-    document.getElementById("uiChip").classList.add("visible");
-    appendLog("Playwright UI starting on port 8081… opening in 5 s", "info");
-
-    // Wait for server to boot then open tab
-    setTimeout(() => {
-      window.open("http://localhost:8081", "_blank");
-    }, 5000);
-
-    // Poll to detect if process died externally
-    uiPollTimer = setInterval(async () => {
-      try {
-        const r = await fetch("/api/ui-status");
-        const s = await r.json();
-        if (!s.running) stopPreviewUI();
-      } catch (_) {}
-    }, 5000);
-  }
-
-  async function stopPreview() {
-    await fetch("/api/stop-ui", { method: "POST" });
-    stopPreviewUI();
-    appendLog("Playwright UI stopped", "warn");
-  }
-
-  function stopPreviewUI() {
-    uiRunning = false;
-    clearInterval(uiPollTimer);
-    const btn = document.getElementById("previewBtn");
-    btn.classList.remove("active");
-    btn.disabled = false;
-    document.getElementById("previewBtnLabel").textContent = "Open Preview";
-    document.getElementById("uiChip").classList.remove("visible");
-  }
-
-  // Build payload from current form (shared by save + launch)
-  function buildPayload() {
-    return {
-      user: {
-        gender: document.getElementById("gender").value,
-        firstName: document.getElementById("firstName").value,
-        lastName: document.getElementById("lastName").value,
-        postcode: document.getElementById("postcode").value,
-        email: document.getElementById("email").value,
-        phone: document.getElementById("phone").value,
-        guardianName: document.getElementById("guardianName").value,
-        dobDay: document.getElementById("dobDay").value,
-        dobMonth: document.getElementById("dobMonth").value,
-        dobYear: document.getElementById("dobYear").value,
-      },
-      payment: {
-        cardholderName: document.getElementById("cardholderName").value,
-        cardNumber: document.getElementById("cardNumber").value,
-        expiryDate: document.getElementById("expiryDate").value,
-        securityCode: document.getElementById("securityCode").value,
-      },
-      condition: { journeyType: activeCondition },
-      booking: {
-        appointmentType: document.getElementById("appointmentType").value,
-        useNextAvailableSlot: document.getElementById("useNextAvailableSlot").checked,
-        preferredMonth: document.getElementById("preferredMonth").value,
-        preferredDate: document.getElementById("preferredDate").value,
-        preferredTime: document.getElementById("preferredTime").value,
-        autoMoveToNextDate: document.getElementById("autoMoveToNextDate").checked,
-        maxDateAttempts: parseInt(document.getElementById("maxDateAttempts").value) || 10,
-      },
-    };
-  }
-
-  // ── Boot ─────────────────────────────────────────────────────────────────
-  init();
-</script>
-</body>
+      // ── Init ───────────────────────────────────────────────────────────────
+      loadPharmacies();
+      renderCrumbs();
+    </script>
+  </body>
 </html>

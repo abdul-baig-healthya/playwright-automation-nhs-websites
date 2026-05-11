@@ -7,14 +7,15 @@ export class ConditionDetailPage {
     this.page = page;
   }
 
-  async setPharmacyCookie(pharmacySlug: string) {
+  async setPharmacyCookie(pharmacySlug: string, fallbackOrigin?: string) {
+    const origin = this.page.url().startsWith("http")
+      ? new URL(this.page.url()).origin
+      : (fallbackOrigin ?? process.env.BASE_URL ?? "http://localhost:4005");
     await this.page.context().addCookies([
       {
         name: "selected-corporate-id",
         value: pharmacySlug,
-        url: this.page.url().startsWith("http")
-          ? new URL(this.page.url()).origin
-          : "http://localhost:4005",
+        url: origin,
       },
     ]);
   }

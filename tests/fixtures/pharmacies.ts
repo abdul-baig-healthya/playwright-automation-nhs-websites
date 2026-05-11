@@ -11,8 +11,8 @@ export interface PharmacySite {
  * in `playwright test --ui` and selectable via `--project="<name>"` on the CLI.
  */
 export const PHARMACY_SITES: PharmacySite[] = [
+  { name: "The Pharmacist", baseURL: "https://thepharmacist.healthya.co.uk/" },
   { name: "Pharmaease", baseURL: "https://pharmaease.healthya.co.uk/" },
   { name: "Paydens", baseURL: "https://paydens-pharmacy.healthya.co.uk/" },
-  { name: "The Pharmacist", baseURL: "https://thepharmacist.healthya.co.uk/" },
   { name: "Localhost", baseURL: "http://localhost:4005", ciSkip: true },
 ];

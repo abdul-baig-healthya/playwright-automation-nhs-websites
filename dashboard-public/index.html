@@ -697,7 +697,9 @@
     }
 
     btnRunAll.addEventListener("click", () => startRun());
-    btnStop.addEventListener("click", () => {
+    btnStop.addEventListener("click", async () => {
+      // Kill the server-side process first
+      try { await fetch("/api/stop-test", { method: "POST" }); } catch (_) {}
       if (activeES) { activeES.close(); activeES = null; }
       running = false;
       btnStop.style.display   = "none";

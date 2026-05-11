@@ -29,6 +29,7 @@ let _testListCache = null;
 let _testListCacheAt = 0;
 const TEST_LIST_TTL_MS = 30_000;
 let lastRunStartTime = 0;
+let activeProc = null; // track the running test process
 
 function flattenSuites(suites, parentTitles = [], depth = 0) {
   const out = [];
@@ -386,7 +387,9 @@ app.get("/api/run-tests", (req, res) => {
   const proc = spawn("npx", args, {
     cwd: __dirname,
     env: { ...process.env },
+    detached: true, // allows killing the whole process group
   });
+  activeProc = proc;
 
   let stdout = "";
   let stderr = "";
@@ -408,6 +411,7 @@ app.get("/api/run-tests", (req, res) => {
   });
 
   proc.on("close", (code) => {
+    activeProc = null;
     const passed = (stdout.match(/\d+ passed/)?.[0] || "").trim();
     const failed = (stdout.match(/\d+ failed/)?.[0] || "").trim();
     const skipped = (stdout.match(/\d+ skipped/)?.[0] || "").trim();
@@ -416,11 +420,26 @@ app.get("/api/run-tests", (req, res) => {
     res.end();
   });
 
-  req.on("close", () => proc.kill());
+  req.on("close", () => {
+    if (proc && !proc.killed) {
+      try { process.kill(-proc.pid, "SIGKILL"); } catch (_) { proc.kill(); }
+    }
+  });
 });
 
 app.get("/api/latest-artifacts", (req, res) => {
   res.json(findArtifactsAfter(lastRunStartTime - 1000));
+});
+
+app.post("/api/stop-test", (_req, res) => {
+  if (!activeProc) return res.json({ stopped: false, reason: "no active run" });
+  try {
+    process.kill(-activeProc.pid, "SIGKILL");
+  } catch (_) {
+    try { activeProc.kill("SIGKILL"); } catch (_2) {}
+  }
+  activeProc = null;
+  res.json({ stopped: true });
 });
 
 app.post("/api/launch-ui", (req, res) => {

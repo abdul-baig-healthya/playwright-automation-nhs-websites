@@ -29,7 +29,9 @@ let _testListCache = null;
 let _testListCacheAt = 0;
 const TEST_LIST_TTL_MS = 30_000;
 let lastRunStartTime = 0;
-let activeProc = null; // track the running test process
+const activeProcs = new Map(); // runId → { proc, startTime }
+const completedRunIds = new Set(); // prevent EventSource auto-reconnect from restarting tests
+const MAX_RUN_MS = 10 * 60 * 1000; // 10-minute hard timeout per run
 
 function flattenSuites(suites, parentTitles = [], depth = 0) {
   const out = [];
@@ -308,6 +310,29 @@ function findArtifactsAfter(since) {
   return artifacts;
 }
 
+function findArtifactsInDir(dir) {
+  const artifacts = { videos: [], traces: [] };
+  if (!fs.existsSync(dir)) return artifacts;
+
+  function scan(d) {
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch (_) { return; }
+    for (const entry of entries) {
+      const full = path.join(d, entry.name);
+      if (entry.isDirectory()) {
+        scan(full);
+      } else if (entry.isFile()) {
+        const url = "/" + path.relative(__dirname, full).replace(/\\/g, "/");
+        if (entry.name.endsWith(".webm")) artifacts.videos.push(url);
+        else if (entry.name === "trace.zip") artifacts.traces.push(url);
+      }
+    }
+  }
+
+  scan(dir);
+  return artifacts;
+}
+
 // ── Routes ───────────────────────────────────────────────────────────────────
 
 app.get("/api/test-data", (req, res) => {
@@ -356,8 +381,20 @@ app.get("/api/run-tests", (req, res) => {
   res.flushHeaders();
 
   const send = (type, data) => {
-    res.write(`data: ${JSON.stringify({ type, data })}\n\n`);
+    try {
+      res.write(`data: ${JSON.stringify({ type, data })}\n\n`);
+      if (typeof res.flush === "function") res.flush();
+    } catch (_) {}
   };
+
+  const runId = req.query.runId || `run-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+  // EventSource auto-reconnects when server closes the stream — prevent restarting a completed run
+  if (completedRunIds.has(runId)) {
+    send("done", { code: 0, success: true, reconnect: true, passed: "", failed: "", skipped: "", artifacts: { videos: [], traces: [] } });
+    res.end();
+    return;
+  }
 
   const grep = req.query.grep;
   const project = req.query.project;
@@ -372,9 +409,8 @@ app.get("/api/run-tests", (req, res) => {
   const runStartTime = Date.now();
   lastRunStartTime = runStartTime;
 
-  const hasDisplay = !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY || process.platform === "darwin" || process.platform === "win32");
-  const args = ["playwright", "test", "--reporter=list"];
-  if (hasDisplay) args.push("--headed");
+  const runOutputDir = path.join(__dirname, "test-results", `run-${runId}`);
+  const args = ["playwright", "test", "--reporter=list", `--output=${runOutputDir}`];
   if (project) args.push(`--project=${project}`);
   // Prefer file:line targeting. Also allow grep within a file if no line number.
   if (file) {
@@ -389,10 +425,22 @@ app.get("/api/run-tests", (req, res) => {
     env: { ...process.env },
     detached: true, // allows killing the whole process group
   });
-  activeProc = proc;
+  activeProcs.set(runId, { proc, startTime: runStartTime });
 
   let stdout = "";
   let stderr = "";
+  let finished = false;
+
+  // Heartbeat — keeps SSE alive and prevents proxy timeouts
+  const heartbeat = setInterval(() => send("ping", null), 15_000);
+
+  // Hard timeout — kill stuck processes after MAX_RUN_MS
+  const killTimeout = setTimeout(() => {
+    if (!finished) {
+      send("log", `⚠ Process timed out after ${MAX_RUN_MS / 60000} minutes — killing.`);
+      try { process.kill(-proc.pid, "SIGKILL"); } catch (_) { try { proc.kill("SIGKILL"); } catch (_2) {} }
+    }
+  }, MAX_RUN_MS);
 
   proc.stdout.on("data", (chunk) => {
     const text = chunk.toString();
@@ -410,20 +458,40 @@ app.get("/api/run-tests", (req, res) => {
     });
   });
 
-  proc.on("close", (code) => {
-    activeProc = null;
-    const passed = (stdout.match(/\d+ passed/)?.[0] || "").trim();
-    const failed = (stdout.match(/\d+ failed/)?.[0] || "").trim();
-    const skipped = (stdout.match(/\d+ skipped/)?.[0] || "").trim();
-    const artifacts = findArtifactsAfter(runStartTime - 1000);
-    send("done", { code, passed, failed, skipped, success: code === 0, artifacts });
-    res.end();
+  proc.on("exit", (code) => {
+    if (finished) return;
+    finished = true;
+    clearInterval(heartbeat);
+    clearTimeout(killTimeout);
+    activeProcs.delete(runId);
+    completedRunIds.add(runId);
+    // Trim completedRunIds to avoid unbounded growth
+    if (completedRunIds.size > 500) {
+      const [oldest] = completedRunIds;
+      completedRunIds.delete(oldest);
+    }
+    // Force-drain stdio — browser subprocesses can hold pipes open even after playwright exits
+    try { proc.stdout.destroy(); } catch (_) {}
+    try { proc.stderr.destroy(); } catch (_) {}
+    // Delay scan to allow Playwright to finish flushing .webm video files to disk
+    setTimeout(() => {
+      const passed = (stdout.match(/\d+ passed/)?.[0] || "").trim();
+      const failed = (stdout.match(/\d+ failed/)?.[0] || "").trim();
+      const skipped = (stdout.match(/\d+ skipped/)?.[0] || "").trim();
+      const artifacts = findArtifactsInDir(runOutputDir);
+      send("done", { code, passed, failed, skipped, success: code === 0, artifacts });
+      res.end();
+    }, 1500);
   });
 
   req.on("close", () => {
-    if (proc && !proc.killed) {
-      try { process.kill(-proc.pid, "SIGKILL"); } catch (_) { proc.kill(); }
+    // Client disconnected — only kill if not already finished
+    if (!finished) {
+      activeProcs.delete(runId);
+      try { process.kill(-proc.pid, "SIGKILL"); } catch (_) { try { proc.kill(); } catch (_2) {} }
     }
+    clearInterval(heartbeat);
+    clearTimeout(killTimeout);
   });
 });
 
@@ -431,15 +499,27 @@ app.get("/api/latest-artifacts", (req, res) => {
   res.json(findArtifactsAfter(lastRunStartTime - 1000));
 });
 
-app.post("/api/stop-test", (_req, res) => {
-  if (!activeProc) return res.json({ stopped: false, reason: "no active run" });
-  try {
-    process.kill(-activeProc.pid, "SIGKILL");
-  } catch (_) {
-    try { activeProc.kill("SIGKILL"); } catch (_2) {}
+app.post("/api/stop-test", (req, res) => {
+  const { runId } = req.body || {};
+  if (runId) {
+    const entry = activeProcs.get(runId);
+    if (!entry) return res.json({ stopped: false, reason: "run not found" });
+    try { process.kill(-entry.proc.pid, "SIGKILL"); } catch (_) {
+      try { entry.proc.kill("SIGKILL"); } catch (_2) {}
+    }
+    activeProcs.delete(runId);
+    return res.json({ stopped: true });
   }
-  activeProc = null;
-  res.json({ stopped: true });
+  // Stop all
+  let count = 0;
+  for (const [, entry] of activeProcs) {
+    try { process.kill(-entry.proc.pid, "SIGKILL"); } catch (_) {
+      try { entry.proc.kill("SIGKILL"); } catch (_2) {}
+    }
+    count++;
+  }
+  activeProcs.clear();
+  res.json({ stopped: count > 0, count });
 });
 
 app.post("/api/launch-ui", (req, res) => {

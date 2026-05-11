@@ -130,12 +130,12 @@
       .tree-file-hdr.open .chevron { transform: rotate(90deg); }
       .tree-file-hdr .file-icon { font-size: 13px; flex-shrink: 0; }
       .tree-file-hdr .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .tree-file-hdr .run-file-btn {
-        opacity: 0; font-size: 10px; padding: 1px 6px; border-radius: 3px;
+      .tree-file-hdr .run-file-btn { opacity: 0; font-size: 10px; padding: 1px 6px; border-radius: 3px;
         border: 1px solid var(--clr-accent); color: var(--clr-accent);
         background: transparent; cursor: pointer; transition: opacity .15s; flex-shrink: 0;
       }
       .tree-file-hdr:hover .run-file-btn { opacity: 1; }
+      .tree-file-hdr:hover .run-file-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
       .tree-children { display: none; padding-left: 0; }
       .tree-children.open { display: block; }
@@ -179,6 +179,7 @@
         background: transparent; cursor: pointer; transition: opacity .15s; flex-shrink: 0;
       }
       .tree-test:hover .run-test-btn { opacity: 1; }
+      .tree-test:hover .run-test-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
       /* Empty state */
       .empty-state {
@@ -296,6 +297,73 @@
       ::-webkit-scrollbar-thumb { background: #c8cce0; border-radius: 3px; }
       #log::-webkit-scrollbar-thumb { background: #3a3d55; }
 
+      /* ── Runs section ────────────────────────────────────────────────── */
+      #tree { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0; }
+      #runs-section {
+        border-top: 1px solid var(--clr-border);
+        flex-shrink: 0; display: none; flex-direction: column;
+        max-height: 260px; min-height: 100px;
+      }
+      #runs-hdr {
+        display: flex; align-items: center; gap: 8px;
+        padding: 8px 12px; flex-shrink: 0;
+        font-size: 11px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: .04em; color: var(--clr-txt-muted);
+      }
+      #runs-badge {
+        font-size: 10px; padding: 1px 6px; border-radius: 8px;
+        color: #fff; background: var(--clr-running); min-width: 18px; text-align: center;
+      }
+      #runs-list { flex: 1; overflow-y: auto; padding: 4px 8px 8px; }
+      .run-card {
+        display: flex; align-items: center; gap: 8px;
+        padding: 6px 8px; border-radius: var(--radius-sm);
+        cursor: pointer; border: 1px solid transparent;
+        transition: background .12s; margin-bottom: 3px;
+      }
+      .run-card:hover { background: #ecedf5; }
+      .run-card.selected { background: #e8eeff; border-color: var(--clr-accent); }
+      .rc-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+      .rc-dot.running { background: var(--clr-running); animation: pulse 1s infinite; }
+      .rc-dot.pass    { background: var(--clr-pass); }
+      .rc-dot.fail    { background: var(--clr-fail); }
+      .rc-dot.stopped { background: var(--clr-txt-muted); }
+      .rc-dot.queued  { background: var(--clr-skip); animation: pulse 2s infinite; }
+      .rc-info { flex: 1; min-width: 0; }
+      .rc-label { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--clr-txt-sidebar); }
+      .rc-elapsed   { font-size: 10px; color: var(--clr-txt-muted); margin-top: 1px; }
+      .rc-queue-pos { font-size: 10px; color: var(--clr-skip); margin-top: 1px; }
+      .rc-dequeue   {
+        flex-shrink: 0; width: 22px; height: 22px; border-radius: 4px;
+        border: 1px solid var(--clr-border); background: transparent;
+        cursor: pointer; color: var(--clr-txt-muted); font-size: 14px; line-height: 1;
+        display: flex; align-items: center; justify-content: center;
+        transition: border-color .15s, color .15s;
+      }
+      .rc-dequeue:hover { border-color: var(--clr-fail); color: var(--clr-fail); }
+      .rc-stop, .rc-video-btn {
+        width: 20px; height: 20px; border-radius: 3px; border: none;
+        cursor: pointer; font-size: 9px; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+        transition: opacity .15s;
+      }
+      .rc-stop      { background: var(--clr-fail); color: #fff; }
+      .rc-video-btn { background: var(--clr-pass); color: #fff; }
+
+      /* ── Video nav overlay ───────────────────────────────────────────── */
+      #vid-nav {
+        position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+        display: none; align-items: center; gap: 8px;
+        background: rgba(0,0,0,.65); border-radius: 20px;
+        padding: 5px 14px; color: #fff; font-size: 11px; white-space: nowrap;
+        pointer-events: all;
+      }
+      #vid-nav button {
+        background: none; border: none; color: #fff; cursor: pointer;
+        font-size: 14px; padding: 0 2px; line-height: 1;
+      }
+      #vid-nav button:disabled { opacity: .35; cursor: default; }
+
       /* Responsive */
       @media (max-width: 680px) {
         :root { --sidebar-w: 240px; }
@@ -343,6 +411,11 @@
         <div id="tree">
           <div class="empty-state">Select a pharmacy to load tests</div>
         </div>
+        <!-- Active/completed runs queue -->
+        <div id="runs-section">
+          <div id="runs-hdr">Runs <span id="runs-badge">0</span></div>
+          <div id="runs-list"></div>
+        </div>
       </nav>
 
       <!-- Main panel -->
@@ -364,6 +437,12 @@
               <div>Run a test to see video playback here</div>
             </div>
             <video id="video-player" controls></video>
+            <!-- Video gallery navigation -->
+            <div id="vid-nav">
+              <button id="vid-prev" title="Previous video">‹</button>
+              <span id="vid-counter">1 / 1</span>
+              <button id="vid-next" title="Next video">›</button>
+            </div>
           </div>
         </div>
 
@@ -400,29 +479,43 @@
 
     <script>
     // ── State ──────────────────────────────────────────────────────────────────
-    let allTests = [];
+    let allTests        = [];
     let currentPharmacy = null;
-    let activeES = null;
-    let running = false;
-    let filterText = "";
+    let filterText      = "";
+
+    // Multi-run state
+    const runs   = new Map(); // runId → { label, status, logs[], artifacts, startTime, es, elapsedTimer, videoUrls[] }
+    let selectedRunId = null;
+    const allVideos   = []; // { url, runId, label }
+    let videoIndex    = -1;
+    const runQueue    = []; // { runId, file, line, grep, label } — sequential queue
+    let queueRunning  = false;
+    const queuedKeys  = new Set(); // tracks which file/test keys are currently queued or running
 
     // ── DOM refs ───────────────────────────────────────────────────────────────
-    const pharmacySel  = document.getElementById("pharmacy-select");
-    const btnRunAll    = document.getElementById("btn-run-all");
-    const btnStop      = document.getElementById("btn-stop");
-    const statusDot    = document.getElementById("status-dot");
-    const statusText   = document.getElementById("status-text");
-    const cntPass      = document.getElementById("cnt-pass");
-    const cntFail      = document.getElementById("cnt-fail");
-    const cntSkip      = document.getElementById("cnt-skip");
-    const treeEl       = document.getElementById("tree");
-    const searchEl     = document.getElementById("search");
-    const logEl        = document.getElementById("log");
-    const videoEl      = document.getElementById("video-player");
-    const vpHolder     = document.getElementById("viewport-placeholder");
-    const browserUrl   = document.getElementById("browser-url");
-    const artifVideos  = document.getElementById("artifact-videos");
-    const artifTraces  = document.getElementById("artifact-traces");
+    const pharmacySel   = document.getElementById("pharmacy-select");
+    const btnRunAll     = document.getElementById("btn-run-all");
+    const btnStop       = document.getElementById("btn-stop");
+    const statusDot     = document.getElementById("status-dot");
+    const statusText    = document.getElementById("status-text");
+    const cntPass       = document.getElementById("cnt-pass");
+    const cntFail       = document.getElementById("cnt-fail");
+    const cntSkip       = document.getElementById("cnt-skip");
+    const treeEl        = document.getElementById("tree");
+    const searchEl      = document.getElementById("search");
+    const logEl         = document.getElementById("log");
+    const videoEl       = document.getElementById("video-player");
+    const vpHolder      = document.getElementById("viewport-placeholder");
+    const browserUrl    = document.getElementById("browser-url");
+    const artifVideos   = document.getElementById("artifact-videos");
+    const artifTraces   = document.getElementById("artifact-traces");
+    const runsSec       = document.getElementById("runs-section");
+    const runsList      = document.getElementById("runs-list");
+    const runsBadge     = document.getElementById("runs-badge");
+    const vidNav        = document.getElementById("vid-nav");
+    const vidPrev       = document.getElementById("vid-prev");
+    const vidNext       = document.getElementById("vid-next");
+    const vidCounter    = document.getElementById("vid-counter");
 
     // ── Tabs ───────────────────────────────────────────────────────────────────
     document.querySelectorAll(".tab").forEach(tab => {
@@ -449,7 +542,7 @@
       if (skipped) { cntSkip.textContent = `⊘ ${skipped}`; cntSkip.style.display = ""; }
     }
 
-    // ── Log helpers ────────────────────────────────────────────────────────────
+    // ── Log helpers (for selected run) ─────────────────────────────────────────
     function appendLog(text, className) {
       const line = document.createElement("div");
       if (className) line.className = className;
@@ -457,9 +550,7 @@
       logEl.appendChild(line);
       logEl.scrollTop = logEl.scrollHeight;
     }
-    function clearLog() {
-      logEl.innerHTML = "";
-    }
+    function clearLog() { logEl.innerHTML = ""; }
     function classifyLog(text) {
       if (/passed|✓|PASS/i.test(text)) return "log-pass";
       if (/failed|✘|FAIL|Error|error/i.test(text)) return "log-fail";
@@ -476,8 +567,7 @@
         pharmacySel.innerHTML = '<option value="">Select pharmacy…</option>';
         list.forEach(p => {
           const opt = document.createElement("option");
-          opt.value = p.name;
-          opt.textContent = p.name;
+          opt.value = p.name; opt.textContent = p.name;
           pharmacySel.appendChild(opt);
         });
         setStatus("idle", "Select a pharmacy to load tests");
@@ -525,11 +615,10 @@
         return;
       }
 
-      // Group by file → suite
       const byFile = {};
       visible.forEach(t => {
         if (!byFile[t.file]) byFile[t.file] = {};
-        const parts = (t.fullTitle || t.title).split(" > ");
+        const parts    = (t.fullTitle || t.title).split(" > ");
         const testName = parts[parts.length - 1];
         const suite    = parts.length > 1 ? parts.slice(0, -1).join(" > ") : "__direct__";
         if (!byFile[t.file][suite]) byFile[t.file][suite] = [];
@@ -537,7 +626,6 @@
       });
 
       treeEl.innerHTML = "";
-
       for (const [file, suites] of Object.entries(byFile)) {
         const shortName = file.split("/").pop();
         const fileDiv   = document.createElement("div");
@@ -549,11 +637,11 @@
           <span class="chevron">▶</span>
           <span class="file-icon">📄</span>
           <span class="file-name" title="${file}">${shortName}</span>
-          <button class="run-file-btn" title="Run all tests in this file">Run</button>
+          <button class="run-file-btn" data-key="file:${file}" title="Run all tests in this file">Run</button>
         `;
         fileHdr.querySelector(".run-file-btn").addEventListener("click", e => {
           e.stopPropagation();
-          startRun({ file, label: shortName });
+          queueRun({ file, label: shortName });
         });
         fileHdr.addEventListener("click", e => {
           if (e.target.classList.contains("run-file-btn")) return;
@@ -571,21 +659,17 @@
             const suiteHdr = document.createElement("div");
             suiteHdr.className = "tree-suite-hdr open";
             suiteHdr.innerHTML = `<span class="chevron">▶</span><span>${suite}</span>`;
-
             const suiteChildren = document.createElement("div");
             suiteChildren.className = "tree-children open";
             sTests.forEach(t => suiteChildren.appendChild(makeTestNode(t)));
-
             suiteHdr.addEventListener("click", () => {
               suiteHdr.classList.toggle("open");
               suiteChildren.classList.toggle("open");
             });
-
             childrenDiv.appendChild(suiteHdr);
             childrenDiv.appendChild(suiteChildren);
           }
         }
-
         fileDiv.appendChild(fileHdr);
         fileDiv.appendChild(childrenDiv);
         treeEl.appendChild(fileDiv);
@@ -599,121 +683,447 @@
       div.innerHTML = `
         <span class="test-dot" data-title="${t.fullTitle || t.title}"></span>
         <span class="test-name" title="${t.fullTitle || t.title}">${t._testName || t.title}</span>
-        <button class="run-test-btn" title="Run this test">▶</button>
+        <button class="run-test-btn" data-key="test:${t.fullTitle || t.title}" title="Run this test">▶</button>
       `;
       div.querySelector(".run-test-btn").addEventListener("click", e => {
         e.stopPropagation();
-        startRun({ file: t.file, line: t.line, grep: t.fullTitle, label: t._testName || t.title });
+        queueRun({ file: t.file, line: t.line, grep: t.fullTitle, label: t._testName || t.title });
       });
       div.addEventListener("click", e => {
         if (e.target.classList.contains("run-test-btn")) return;
-        // just select without running
         document.querySelectorAll(".tree-test").forEach(n => n.classList.remove("active"));
         div.classList.add("active");
       });
       return div;
     }
 
-    // ── Search filter ──────────────────────────────────────────────────────────
-    searchEl.addEventListener("input", () => {
-      filterText = searchEl.value;
-      renderTree(allTests);
-    });
+    searchEl.addEventListener("input", () => { filterText = searchEl.value; renderTree(allTests); });
+
+    // ── Runs section helpers ───────────────────────────────────────────────────
+    function showRunsSection() {
+      runsSec.style.display = "flex";
+    }
+
+    function updateRunsBadge() {
+      const active = [...runs.values()].filter(r => r.status === "running").length;
+      const queued = [...runs.values()].filter(r => r.status === "queued").length;
+      runsBadge.textContent = runs.size;
+      runsBadge.style.background = active > 0 ? "var(--clr-running)"
+        : queued > 0 ? "var(--clr-skip)" : "var(--clr-txt-muted)";
+    }
+
+    function addRunCard(runId) {
+      const run = runs.get(runId);
+      const isQueued = run.status === "queued";
+      const card = document.createElement("div");
+      card.className = "run-card" + (selectedRunId === runId ? " selected" : "");
+      card.dataset.runid = runId;
+      card.innerHTML = `
+        <span class="rc-dot ${run.status}"></span>
+        <div class="rc-info">
+          <div class="rc-label" title="${run.label}">${run.label}</div>
+          ${isQueued
+            ? `<div class="rc-queue-pos">⏳ in queue</div>`
+            : `<div class="rc-elapsed">0s</div>`}
+        </div>
+        ${isQueued
+          ? `<button class="rc-dequeue" title="Remove from queue">×</button>`
+          : `<button class="rc-stop" title="Stop this run">■</button>`}
+      `;
+      if (isQueued) {
+        card.querySelector(".rc-dequeue").addEventListener("click", e => {
+          e.stopPropagation();
+          stopRun(runId);
+        });
+      } else {
+        card.querySelector(".rc-stop").addEventListener("click", e => {
+          e.stopPropagation();
+          stopRun(runId);
+        });
+        run.elapsedTimer = setInterval(() => {
+          const el = card.querySelector(".rc-elapsed");
+          if (!el) return;
+          const secs = Math.floor((Date.now() - run.startTime) / 1000);
+          el.textContent = secs < 60 ? `${secs}s` : `${Math.floor(secs/60)}m ${secs%60}s`;
+        }, 1000);
+      }
+      card.addEventListener("click", () => selectRun(runId));
+      runsList.prepend(card);
+      updateRunsBadge();
+      showRunsSection();
+    }
+
+    function updateRunCard(runId) {
+      const run = runs.get(runId);
+      if (!run) return;
+      const card = runsList.querySelector(`.run-card[data-runid="${runId}"]`);
+      if (!card) return;
+      clearInterval(run.elapsedTimer);
+      run.elapsedTimer = null;
+
+      const dot = card.querySelector(".rc-dot");
+      dot.className = "rc-dot " + run.status;
+
+      const stopBtn = card.querySelector(".rc-stop");
+      const deqBtn  = card.querySelector(".rc-dequeue");
+
+      if (run.status === "running") return;
+      if (stopBtn) stopBtn.remove();
+      if (deqBtn) deqBtn.remove();
+
+      // Add video button if we have a video
+      if (run.videoUrls && run.videoUrls.length) {
+        const vBtn = document.createElement("button");
+        vBtn.className = "rc-video-btn";
+        vBtn.title = "Watch recording";
+        vBtn.textContent = "▶";
+        vBtn.addEventListener("click", e => {
+          e.stopPropagation();
+          const idx = allVideos.findIndex(v => v.runId === runId);
+          if (idx >= 0) playVideoAt(idx);
+        });
+        card.appendChild(vBtn);
+      }
+      updateRunsBadge();
+    }
+
+    function updateQueuePositions() {
+      runQueue.forEach((job, i) => {
+        const card = runsList.querySelector(`.run-card[data-runid="${job.runId}"]`);
+        if (!card) return;
+        const pos = card.querySelector(".rc-queue-pos");
+        if (pos) pos.textContent = `⏳ position ${i + 1} in queue`;
+      });
+    }
+
+    function transitionCardToRunning(runId) {
+      const run  = runs.get(runId);
+      const card = runsList.querySelector(`.run-card[data-runid="${runId}"]`);
+      if (!run || !card) return;
+      run.status    = "running";
+      run.startTime = Date.now();
+
+      const dot = card.querySelector(".rc-dot");
+      if (dot) dot.className = "rc-dot running";
+
+      const queuePos = card.querySelector(".rc-queue-pos");
+      if (queuePos) {
+        const elapsed = document.createElement("div");
+        elapsed.className = "rc-elapsed";
+        elapsed.textContent = "0s";
+        queuePos.replaceWith(elapsed);
+      }
+      const deqBtn = card.querySelector(".rc-dequeue");
+      if (deqBtn) {
+        const stopBtn = document.createElement("button");
+        stopBtn.className = "rc-stop";
+        stopBtn.title = "Stop this run";
+        stopBtn.textContent = "■";
+        stopBtn.addEventListener("click", e => { e.stopPropagation(); stopRun(runId); });
+        deqBtn.replaceWith(stopBtn);
+      }
+      run.elapsedTimer = setInterval(() => {
+        const el = card.querySelector(".rc-elapsed");
+        if (!el) return;
+        const secs = Math.floor((Date.now() - run.startTime) / 1000);
+        el.textContent = secs < 60 ? `${secs}s` : `${Math.floor(secs/60)}m ${secs%60}s`;
+      }, 1000);
+      updateRunsBadge();
+      if (selectedRunId === runId) renderSelectedRun();
+    }
+
+    function selectRun(runId) {
+      selectedRunId = runId;
+      document.querySelectorAll(".run-card").forEach(c => {
+        c.classList.toggle("selected", c.dataset.runid === runId);
+      });
+      renderSelectedRun();
+    }
+
+    function renderSelectedRun() {
+      const run = selectedRunId ? runs.get(selectedRunId) : null;
+      clearLog();
+      if (!run) return;
+
+      run.logs.forEach(({ text, cls }) => appendLog(text, cls));
+
+      if (run.status === "running") {
+        setStatus("running", `Running: ${run.label}`);
+        hideCounts();
+      } else if (run.status === "queued") {
+        setStatus("idle", `Queued: ${run.label}`);
+        hideCounts();
+      } else if (run.status === "pass") {
+        setStatus("pass", `Passed: ${run.label}`);
+        if (run.counts) showCounts(run.counts.passed, run.counts.failed, run.counts.skipped);
+      } else if (run.status === "fail") {
+        setStatus("fail", `Failed: ${run.label}`);
+        if (run.counts) showCounts(run.counts.passed, run.counts.failed, run.counts.skipped);
+      } else {
+        setStatus("idle", `Stopped: ${run.label}`);
+        hideCounts();
+      }
+
+      if (run.videoUrls && run.videoUrls.length) {
+        const idx = allVideos.findIndex(v => v.runId === selectedRunId);
+        if (idx >= 0) showVideoAt(idx);
+      } else {
+        videoEl.style.display = "none";
+        vpHolder.style.display = "flex";
+      }
+
+      if (run.artifacts) updateArtifactsPanel(run.artifacts);
+    }
+
+    function addRunLog(runId, text, cls) {
+      const run = runs.get(runId);
+      if (!run) return;
+      run.logs.push({ text, cls });
+      if (selectedRunId === runId) appendLog(text, cls);
+    }
+
+    // ── Video gallery ──────────────────────────────────────────────────────────
+    function showVideoAt(idx) {
+      if (idx < 0 || idx >= allVideos.length) return;
+      videoIndex = idx;
+      const v = allVideos[idx];
+      videoEl.src = v.url;
+      videoEl.load();
+      videoEl.style.display = "block";
+      vpHolder.style.display = "none";
+      videoEl.play().catch(() => {});
+      browserUrl.value = window.location.origin + v.url;
+      updateVideoNav();
+    }
+
+    function playVideoAt(idx) { showVideoAt(idx); }
+
+    function updateVideoNav() {
+      if (allVideos.length === 0) { vidNav.style.display = "none"; return; }
+      vidNav.style.display = "flex";
+      vidCounter.textContent = `${videoIndex + 1} / ${allVideos.length}`;
+      vidPrev.disabled = videoIndex <= 0;
+      vidNext.disabled = videoIndex >= allVideos.length - 1;
+    }
+
+    vidPrev.addEventListener("click", () => { if (videoIndex > 0) showVideoAt(videoIndex - 1); });
+    vidNext.addEventListener("click", () => { if (videoIndex < allVideos.length - 1) showVideoAt(videoIndex + 1); });
 
     // ── Run ────────────────────────────────────────────────────────────────────
-    function startRun({ file, line, grep, label } = {}) {
-      if (running) return;
+    function setRunBtnQueued(key, disabled) {
+      if (!key) return;
+      const btn = document.querySelector(`[data-key="${CSS.escape(key)}"]`);
+      if (btn) btn.disabled = disabled;
+    }
+
+    function updatePharmacyLock() {
+      const busy = queueRunning || runQueue.length > 0;
+      pharmacySel.disabled = busy;
+      pharmacySel.title = busy ? "Cannot change pharmacy while tests are running or queued" : "Select pharmacy";
+    }
+
+    function queueRun({ file, line, grep, label } = {}) {
       if (!currentPharmacy) { alert("Select a pharmacy first."); return; }
 
-      running = true;
-      clearLog();
-      hideCounts();
-      setStatus("running", `Running${label ? ": " + label : " all tests"}…`);
-      btnRunAll.style.display = "none";
-      btnStop.style.display   = "";
-      videoEl.style.display   = "none";
-      vpHolder.style.display  = "flex";
-      browserUrl.value = "Running…";
+      // Prevent duplicate queuing of the same test/file
+      const key = grep ? `test:${grep}` : file ? `file:${file}` : null;
+      if (key && queuedKeys.has(key)) return;
 
-      // Mark all dots as running (or just the targeted one)
-      const targets = file
-        ? treeEl.querySelectorAll(`.tree-test[data-full-title]`)
-        : treeEl.querySelectorAll(".tree-test");
-      treeEl.querySelectorAll(".test-dot").forEach(d => {
-        d.className = "test-dot";
+      const runId    = `run-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const runLabel = label || (file ? file.split("/").pop() : "All tests");
+
+      if (key) {
+        queuedKeys.add(key);
+        setRunBtnQueued(key, true);
+      }
+
+      runs.set(runId, {
+        label: runLabel, status: "queued",
+        logs: [], artifacts: null, videoUrls: [],
+        startTime: null, es: null, elapsedTimer: null, counts: null,
+        queueKey: key
       });
 
-      // Build SSE URL
-      const params = new URLSearchParams({ project: currentPharmacy });
+      runQueue.push({ runId, file, line, grep, label: runLabel, key });
+      addRunCard(runId);
+      selectRun(runId);
+      updateQueuePositions();
+      updateGlobalStatus();
+      updatePharmacyLock();
+      processQueue();
+    }
+
+    function processQueue() {
+      if (queueRunning || runQueue.length === 0) return;
+      queueRunning = true;
+
+      const job = runQueue.shift();
+      updateQueuePositions();
+
+      const { runId, file, line, grep, label, key } = job;
+      transitionCardToRunning(runId);
+      clearLog();
+      hideCounts();
+      setStatus("running", `Running: ${label}`);
+      treeEl.querySelectorAll(".test-dot").forEach(d => { d.className = "test-dot"; });
+
+      const params = new URLSearchParams({ project: currentPharmacy, runId });
       if (file)  params.set("file", file);
       if (line)  params.set("line", line);
       if (grep)  params.set("grep", grep);
       if (label) params.set("label", label);
 
-      activeES = new EventSource(`/api/run-tests?${params}`);
+      const es = new EventSource(`/api/run-tests?${params}`);
+      const run = runs.get(runId);
+      run.es = es;
 
-      activeES.onmessage = (e) => {
+      es.onmessage = (e) => {
         const { type, data } = JSON.parse(e.data);
-
         if (type === "start") {
-          appendLog(data, "log-start");
+          addRunLog(runId, data, "log-start");
         } else if (type === "log") {
-          appendLog(data, classifyLog(data));
-          // Update URL bar if we see a URL-like string
+          const cls = classifyLog(data);
+          addRunLog(runId, data, cls);
           const m = data.match(/https?:\/\/\S+/);
-          if (m) browserUrl.value = m[0];
+          if (m && selectedRunId === runId) browserUrl.value = m[0];
+        } else if (type === "ping") {
+          // heartbeat — keep-alive, ignore
         } else if (type === "done") {
-          running = false;
-          activeES.close(); activeES = null;
-          btnStop.style.display   = "none";
-          btnRunAll.style.display = "";
+          es.close();
+          const r = runs.get(runId);
+          if (!r) { queueRunning = false; processQueue(); return; }
+          if (r.status !== "running") { queueRunning = false; processQueue(); return; }
+          r.es = null;
+          r.status = data.success ? "pass" : "fail";
+          r.counts = { passed: data.passed, failed: data.failed, skipped: data.skipped };
+          r.artifacts = data.artifacts || null;
 
-          const ok = data.success;
-          setStatus(ok ? "pass" : "fail", ok ? "All tests passed" : "Some tests failed");
-          if (data.passed || data.failed || data.skipped)
-            showCounts(data.passed, data.failed, data.skipped);
+          if (data.artifacts && data.artifacts.videos) {
+            data.artifacts.videos.forEach(url => {
+              r.videoUrls.push(url);
+              allVideos.push({ url, runId, label: r.label });
+            });
+          }
 
-          appendLog(
-            `\n── Run ${ok ? "✓ passed" : "✗ failed"} (code ${data.code}) ──`,
-            "log-done " + (ok ? "log-pass" : "log-fail")
+          addRunLog(runId,
+            `\n── Run ${data.success ? "✓ passed" : "✗ failed"} (code ${data.code}) ──`,
+            "log-done " + (data.success ? "log-pass" : "log-fail")
           );
 
-          // Artifacts
-          if (data.artifacts) {
-            updateArtifacts(data.artifacts);
-          }
+          updateRunCard(runId);
+          updateGlobalStatus();
+          if (selectedRunId === runId) renderSelectedRun();
+
+          // Advance queue + release key
+          if (key) { queuedKeys.delete(key); setRunBtnQueued(key, false); }
+          queueRunning = false;
+          updatePharmacyLock();
+          processQueue();
         }
       };
 
-      activeES.onerror = () => {
-        if (!running) return;
-        running = false;
-        activeES = null;
-        btnStop.style.display   = "none";
-        btnRunAll.style.display = "";
-        setStatus("fail", "Connection error");
-        appendLog("Connection to server lost.", "log-fail");
+      es.onerror = () => {
+        const r = runs.get(runId);
+        if (!r || r.status !== "running") return;
+        es.close();
+        r.es = null;
+        r.status = "stopped";
+        addRunLog(runId, "Connection to server lost.", "log-fail");
+        updateRunCard(runId);
+        updateGlobalStatus();
+        if (selectedRunId === runId) renderSelectedRun();
+        if (key) { queuedKeys.delete(key); setRunBtnQueued(key, false); }
+        queueRunning = false;
+        updatePharmacyLock();
+        processQueue();
       };
     }
 
-    btnRunAll.addEventListener("click", () => startRun());
+    async function stopRun(runId) {
+      const run = runs.get(runId);
+      if (!run) return;
+
+      // If queued but not yet running — just remove from queue
+      if (run.status === "queued") {
+        const idx = runQueue.findIndex(j => j.runId === runId);
+        const key = idx >= 0 ? runQueue[idx].key : run.queueKey;
+        if (idx >= 0) runQueue.splice(idx, 1);
+        if (key) { queuedKeys.delete(key); setRunBtnQueued(key, false); }
+        run.status = "stopped";
+        addRunLog(runId, "Dequeued by user.", "log-warn");
+        updateRunCard(runId);
+        updateQueuePositions();
+        updateGlobalStatus();
+        updatePharmacyLock();
+        if (selectedRunId === runId) renderSelectedRun();
+        return;
+      }
+
+      const wasRunning = run.status === "running";
+      try { await fetch("/api/stop-test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ runId }) }); } catch (_) {}
+      if (run.es) { run.es.close(); run.es = null; }
+      run.status = "stopped";
+      addRunLog(runId, "Run stopped by user.", "log-warn");
+      updateRunCard(runId);
+      updateGlobalStatus();
+      if (selectedRunId === runId) renderSelectedRun();
+
+      if (wasRunning && queueRunning) {
+        const key = run.queueKey;
+        if (key) { queuedKeys.delete(key); setRunBtnQueued(key, false); }
+        queueRunning = false;
+        updatePharmacyLock();
+        processQueue();
+      }
+    }
+
+    function updateGlobalStatus() {
+      const activeCount = [...runs.values()].filter(r => r.status === "running").length;
+      const queuedCount = runQueue.length;
+      if (activeCount > 0 || queuedCount > 0) {
+        btnStop.style.display = "";
+        const label = activeCount > 0
+          ? `Running${queuedCount > 0 ? ` (+${queuedCount} queued)` : ""}…`
+          : `${queuedCount} queued…`;
+        setStatus("running", label);
+      } else {
+        btnStop.style.display = "none";
+        const anyFail = [...runs.values()].some(r => r.status === "fail");
+        setStatus(anyFail ? "fail" : "pass",
+          anyFail ? "Some runs failed" : runs.size > 0 ? "All runs completed" : "Ready");
+      }
+      updatePharmacyLock();
+    }
+
+    btnRunAll.addEventListener("click", () => queueRun());
     btnStop.addEventListener("click", async () => {
-      // Kill the server-side process first
-      try { await fetch("/api/stop-test", { method: "POST" }); } catch (_) {}
-      if (activeES) { activeES.close(); activeES = null; }
-      running = false;
-      btnStop.style.display   = "none";
-      btnRunAll.style.display = "";
-      setStatus("idle", "Stopped");
-      appendLog("Run stopped by user.", "log-warn");
+      // Clear pending queue first
+      const pendingIds = runQueue.map(j => j.runId);
+      runQueue.length = 0;
+      for (const id of pendingIds) {
+        const r = runs.get(id);
+        if (r) {
+          r.status = "stopped";
+          addRunLog(id, "Dequeued (global stop).", "log-warn");
+          updateRunCard(id);
+        }
+      }
+      // Stop any currently running run
+      const running = [...runs.entries()].filter(([, r]) => r.status === "running");
+      for (const [id] of running) await stopRun(id);
+      queuedKeys.clear();
+      document.querySelectorAll("[data-key]").forEach(b => { b.disabled = false; });
+      queueRunning = false;
+      updateGlobalStatus();
+      updatePharmacyLock();
     });
 
-    // ── Artifacts ──────────────────────────────────────────────────────────────
-    function updateArtifacts(artifacts) {
-      // Videos
+
+    // ── Artifacts panel ────────────────────────────────────────────────────────
+    function updateArtifactsPanel(artifacts) {
       if (artifacts.videos && artifacts.videos.length) {
         artifVideos.innerHTML = "";
-        artifacts.videos.forEach((url, i) => {
+        artifacts.videos.forEach(url => {
           const name = url.split("/").pop();
           const a = document.createElement("a");
           a.href = url; a.target = "_blank";
@@ -721,18 +1131,9 @@
           a.innerHTML = `<span class="icon">📹</span><span class="name">${name}</span><span>↗</span>`;
           artifVideos.appendChild(a);
         });
-        // Auto-play latest video
-        const latest = artifacts.videos[artifacts.videos.length - 1];
-        videoEl.src = latest;
-        videoEl.style.display = "block";
-        vpHolder.style.display = "none";
-        videoEl.play().catch(() => {});
-        browserUrl.value = window.location.origin + latest;
       } else {
         artifVideos.innerHTML = '<div class="artifact-empty">No videos captured.</div>';
       }
-
-      // Traces
       if (artifacts.traces && artifacts.traces.length) {
         artifTraces.innerHTML = "";
         artifacts.traces.forEach(url => {

@@ -1,4 +1,5 @@
 import { Page } from "@playwright/test";
+import { PaymentMethod } from "../fixtures/flow-configs";
 
 export class PaymentPage {
   readonly page: Page;
@@ -639,42 +640,86 @@ export class PaymentPage {
     return this.bookingFlowCompleted;
   }
 
+  private async clickAddNewCard(): Promise<boolean> {
+    const btn = this.page
+      .locator(
+        [
+          'button:has-text("Add new card")',
+          'button:has-text("Use a different card")',
+          'button:has-text("Add card")',
+          ':text("Add new card")',
+          ':text("Use a different card")',
+        ].join(", "),
+      )
+      .first();
+    if (await btn.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      await btn.click();
+      await this.page.waitForTimeout(1_000);
+      console.log("[PaymentPage] Clicked 'Add new card'");
+      return true;
+    }
+    return false;
+  }
+
   /**
-   * Main entry point.
-   *
-   * Scenario 2 (saved card visible) — worst-case time before Pay click:
-   *   payButtonVisible check  ~500ms
-   *   detectPaymentScenario   ~800ms (parallel)
-   *   ensureSavedCardSelected ~300ms
-   *   ─────────────────────────────
-   *   Total                  ~1.6s  (previously 3–8s of serial timeouts)
-   *
-   * Scenario 1 (manual form) — fill fields then Pay + 3DS as before.
+   * Main entry point. Accepts an optional paymentMethod to force a specific path:
+   *   "saved-card" — use existing saved card (fallback to manual if not found)
+   *   "new-card"   — always fill manual form (click "Add new card" first if needed)
+   *   "auto"       — detect automatically (original behaviour)
    */
-  async completePayment(data: {
-    cardholderName: string;
-    cardNumber: string;
-    expiryDate: string;
-    securityCode: string;
-  }) {
+  async completePayment(
+    data: {
+      cardholderName: string;
+      cardNumber: string;
+      expiryDate: string;
+      securityCode: string;
+    },
+    paymentMethod: PaymentMethod = "auto",
+  ) {
     await this.waitForPage();
 
-    // ── Scenario 1: Saved/Masked card available ────────────
     const savedCardVisible = await this.page
       .locator(':text("saved card"), :text("****")')
       .first()
       .isVisible()
       .catch(() => false);
 
-    if (savedCardVisible) {
-      console.log("[PaymentPage] Saved card detected");
+    // ── Forced: saved card ─────────────────────────────────
+    if (paymentMethod === "saved-card") {
+      if (savedCardVisible) {
+        console.log("[PaymentPage] Using saved card (forced)");
+        await this.ensureSavedCardSelected();
+        await this.clickPay();
+        return;
+      }
+      console.log("[PaymentPage] saved-card requested but not found — falling back to manual form");
+      await this.fillPaymentDetails(data);
+      await this.clickPay();
+      return;
+    }
 
+    // ── Forced: new card ───────────────────────────────────
+    if (paymentMethod === "new-card") {
+      if (savedCardVisible) {
+        const clicked = await this.clickAddNewCard();
+        if (!clicked) {
+          console.log("[PaymentPage] Could not find 'Add new card' — filling form directly");
+        }
+      }
+      console.log("[PaymentPage] Filling manual card form (forced new-card)");
+      await this.fillPaymentDetails(data);
+      await this.clickPay();
+      return;
+    }
+
+    // ── Auto: detect scenario ──────────────────────────────
+    if (savedCardVisible) {
+      console.log("[PaymentPage] Saved card detected (auto)");
       await this.ensureSavedCardSelected();
       await this.clickPay();
       return;
     }
 
-    // ── Scenario 2: Manual card form available ─────────────
     const manualCardFormVisible = await this.page
       .locator(':text("Enter your card details here")')
       .first()
@@ -682,8 +727,7 @@ export class PaymentPage {
       .catch(() => false);
 
     if (manualCardFormVisible) {
-      console.log("[PaymentPage] Manual payment form detected");
-
+      console.log("[PaymentPage] Manual payment form detected (auto)");
       await this.fillPaymentDetails(data);
       await this.clickPay();
       return;

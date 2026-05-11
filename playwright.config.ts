@@ -1,10 +1,25 @@
 import { defineConfig, devices } from "@playwright/test";
 import * as dotenv from "dotenv";
 import * as path from "path";
+import { PHARMACY_SITES } from "./tests/fixtures/pharmacies";
 
 dotenv.config({ path: path.resolve(__dirname, ".env") });
 
-const BASE_URL = process.env.BASE_URL || "http://localhost:4005";
+/**
+ * CI / one-off override: set BASE_URL in the environment to run against a
+ * single pharmacy without touching pharmacies.ts.
+ * When BASE_URL is set it takes precedence and a single "CI Override" project
+ * is created instead of the full pharmacy list.
+ */
+const ciBaseURL = process.env.BASE_URL;
+const isCI = !!process.env.CI;
+
+const projects = ciBaseURL
+  ? [{ name: "CI Override", use: { ...devices["Desktop Chrome"], baseURL: ciBaseURL } }]
+  : PHARMACY_SITES.filter((site) => !(isCI && site.ciSkip)).map((site) => ({
+      name: site.name,
+      use: { ...devices["Desktop Chrome"], baseURL: site.baseURL },
+    }));
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -17,7 +32,6 @@ export default defineConfig({
   reporter: [["html", { open: "never" }], ["list"]],
 
   use: {
-    baseURL: BASE_URL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "on-first-retry",
@@ -25,10 +39,5 @@ export default defineConfig({
     navigationTimeout: 30_000,
   },
 
-  projects: [
-    {
-      name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
-    },
-  ],
+  projects,
 });

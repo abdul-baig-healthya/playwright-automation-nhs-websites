@@ -1,13 +1,17 @@
 {
   "name": "pharmacy-e2e-tests",
   "version": "1.0.0",
-  "description": "Standalone Playwright E2E tests for pharmacy apps. Configure BASE_URL to run against any pharmacy instance.",
+  "description": "Playwright E2E tests for multiple pharmacy websites. Select a pharmacy via --project or use npm scripts below.",
   "scripts": {
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
     "test:report": "playwright show-report",
+    "test:pharmaease": "playwright test --project=\"Pharmaease\"",
+    "test:paydens": "playwright test --project=\"Paydens\"",
+    "test:pharmacist": "playwright test --project=\"The Pharmacist\"",
+    "test:localhost": "playwright test --project=\"Localhost\"",
     "dashboard": "node dashboard.js"
   },
   "devDependencies": {

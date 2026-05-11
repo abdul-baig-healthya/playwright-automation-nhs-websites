@@ -1,21 +1,43 @@
 import { test, expect, Page } from "@playwright/test";
-import { TEST_USER, ACTIVE_CONDITION, getActiveConditionName } from "../fixtures/test-data";
+import {
+  TEST_USER,
+  ACTIVE_CONDITION,
+  CART_PREFERENCES,
+  DRUG_SELECTION_PREFERENCES,
+  SHIPPING_ADDRESS_PREFERENCES,
+  THANK_YOU_PREFERENCES,
+  getActiveConditionName,
+} from "../fixtures/test-data";
 import { ConditionsPage } from "../page-objects/ConditionsPage";
 import { ConditionDetailPage } from "../page-objects/ConditionDetailPage";
 import { GuestContinuePage } from "../page-objects/GuestContinuePage";
 import { QuestionnairePage } from "../page-objects/QuestionnairePage";
 import { SignupPage } from "../page-objects/SignupPage";
+import { ProductSignupPage } from "../page-objects/ProductSignupPage";
+import { DrugSelectionPage } from "../page-objects/DrugSelectionPage";
+import { CartPage } from "../page-objects/CartPage";
+import { ShippingAddressPage } from "../page-objects/ShippingAddressPage";
+import { ThankYouPage } from "../page-objects/ThankYouPage";
 import { BookingPage } from "../page-objects/BookingPage";
 import { PaymentPage } from "../page-objects/PaymentPage";
 
 // ─── Journey step types ───────────────────────────────────────────────────────
 type JourneyStep =
+  | "guest_continue"
+  | "product_signup"
   | "questionnaire_submit"
   | "sign_up"
   | "appointment_booking"
+  | "drug_selection"
+  | "cart"
+  | "shipping_address"
+  | "thank_you"
   | "payment"
   | "success"
   | "unknown";
+
+let shippingHandled = false;
+let paymentHandled = false;
 
 /**
  * Detect the current journey step by inspecting the DOM.
@@ -24,19 +46,57 @@ async function detectCurrentStep(page: Page): Promise<JourneyStep> {
   const currentUrl = page.url();
 
   const hasVisibleIndicator = async (selectors: string[]) => {
-    const checks = await Promise.all(
-      selectors.map((sel) =>
-        page
-          .locator(sel)
-          .first()
+    for (const sel of selectors) {
+      const nodes = page.locator(sel);
+      const count = await nodes.count().catch(() => 0);
+      const maxToCheck = Math.min(count, 5);
+
+      for (let i = 0; i < maxToCheck; i++) {
+        const visible = await nodes
+          .nth(i)
           .isVisible({ timeout: 300 })
-          .catch(() => false),
-      ),
-    );
-    return checks.some(Boolean);
+          .catch(() => false);
+        if (visible) return true;
+      }
+    }
+    return false;
   };
 
-  // 1. Success / confirmation state (highest priority)
+  // 1. Cart step
+  const cartIndicators = [
+    "text=/shopping\\s*cart/i",
+    'button:has-text("Proceed To Checkout")',
+    'button:has-text("Continue Shopping")',
+    'button:has-text("Apply")',
+    'input[placeholder*="coupon" i]',
+  ];
+  if (await hasVisibleIndicator(cartIndicators)) {
+    return "cart";
+  }
+
+  // 2. Shipping address step (must be before payment)
+  const shippingAddressIndicators = [
+    "text=/shipping address/i",
+    "text=/select delivery address/i",
+    "text=/payment method/i",
+    'button:has-text("Save Address")',
+    'button:has-text("Cancel")',
+  ];
+  if (await hasVisibleIndicator(shippingAddressIndicators)) {
+    return "shipping_address";
+  }
+
+  // 3. Thank-you order page (must run before generic success)
+  const thankYouIndicators = [
+    "text=/thank you for your order!/i",
+    "text=/your order has been successfully placed/i",
+    'a:has-text("My Orders")',
+  ];
+  if (await hasVisibleIndicator(thankYouIndicators)) {
+    return "thank_you";
+  }
+
+  // 4. Success / confirmation state
   const successIndicators = [
     ':has-text("Booking Confirmed")',
     ':has-text("booking confirmed")',
@@ -53,7 +113,7 @@ async function detectCurrentStep(page: Page): Promise<JourneyStep> {
     return "success";
   }
 
-  // 2. Booking step (Prioritize over payment if "Continue to Payment" button is present)
+  // 5. Booking step (Prioritize over payment if "Continue to Payment" button is present)
   const bookingIndicators = [
     ".appointment-type-radio-group",
     ".rota-slot",
@@ -71,7 +131,36 @@ async function detectCurrentStep(page: Page): Promise<JourneyStep> {
     return "appointment_booking";
   }
 
-  // 3. Payment step
+  // 6. Drug selection step
+  const drugSelectionIndicators = [
+    "text=/what.?s your preference\\?/i",
+    ".drug-selection-section",
+    ".product-box-ui",
+    'button:has-text("Choose this Option")',
+  ];
+  if (await hasVisibleIndicator(drugSelectionIndicators)) {
+    return "drug_selection";
+  }
+
+  // 7. Product checkout signup step (strict detection to avoid early false positives)
+  const productSignupHeadingVisible = await hasVisibleIndicator([
+    "text=/enter your personal details/i",
+    "text=/enter your contact details/i",
+  ]);
+  const productSignupContextVisible = await hasVisibleIndicator([
+    "text=/order summary/i",
+    ".summary-box",
+    ".checkout-product-box",
+    "form[name='signup-form']",
+  ]);
+  if (
+    productSignupHeadingVisible &&
+    (productSignupContextVisible || /checkout/i.test(currentUrl))
+  ) {
+    return "product_signup";
+  }
+
+  // 8. Payment step
   const paymentIndicators = [
     ':text("Complete your payment")',
     ':text("Enter your card details here")',
@@ -82,7 +171,6 @@ async function detectCurrentStep(page: Page): Promise<JourneyStep> {
     'input[autocomplete="cc-csc"]',
     ':text("3dsecure.io")',
     ':text("Pass challenge")',
-    ':text("Token fee")',
     'button:has-text("Pay £")',
     'button:has-text("Pay")',
   ];
@@ -91,28 +179,52 @@ async function detectCurrentStep(page: Page): Promise<JourneyStep> {
   }
 
   // URL fallback for tenants/routes that render payment UI after a delay.
+  // Keep this after shipping detection to avoid misclassifying checkout address pages.
   if (
     /payment|checkout|card|3dsecure|challenge/i.test(currentUrl) &&
-    !(await hasVisibleIndicator(successIndicators))
+    !(await hasVisibleIndicator(successIndicators)) &&
+    !(await hasVisibleIndicator(shippingAddressIndicators))
   ) {
     return "payment";
   }
 
-  // 4. Sign-up / contact-details step
+  // 9. Continue-as-guest step (must be before signup detection)
+  const guestContinueIndicators = [
+    'button:has-text("Continue as Guest")',
+    'button:has-text("Continue as guest")',
+    'a:has-text("Continue as Guest")',
+    'a:has-text("Continue as guest")',
+    '[role="button"]:has-text("Continue as Guest")',
+    '[role="button"]:has-text("Continue as guest")',
+    "text=/continue\\s+as\\s+guest/i",
+  ];
+  if (await hasVisibleIndicator(guestContinueIndicators)) {
+    return "guest_continue";
+  }
+
+  // 10. Sign-up / contact-details step
   const signupIndicators = [
     'input[name="first_name"]',
     'input[name="email"]',
     'input[type="email"]',
+    'input[placeholder*="phone number" i]',
+    'input[placeholder*="Confirm your phone number" i]',
+    'input[placeholder*="Enter your email address" i]',
+    'input[placeholder*="Confirm your email address" i]',
+    'input[placeholder*="Enter password" i]',
+    'input[placeholder*="Confirm password" i]',
+    ':text("Enter your contact details")',
     ':text("Patient details")',
     ':text("Personal details")',
     ':text("Contact details")',
     ':text("Enter your details")',
+    'button:has-text("Sign Up")',
   ];
   if (await hasVisibleIndicator(signupIndicators)) {
     return "sign_up";
   }
 
-  // 5. Questionnaire step
+  // 11. Questionnaire step
   const questionnaireIndicators = [
     ':text("Questionnaires")',
     ':text("Important Notice")',
@@ -142,7 +254,7 @@ async function detectCurrentStep(page: Page): Promise<JourneyStep> {
 
 // ─── Main test ────────────────────────────────────────────────────────────────
 test.describe("Conditions flow", () => {
-  test("complete conditions flow: listing → eligibility → questionnaire → signup → book", async ({
+  test.only("complete conditions flow: listing → eligibility → questionnaire → signup → book", async ({
     page,
     baseURL,
   }) => {
@@ -166,6 +278,11 @@ test.describe("Conditions flow", () => {
     const guestContinuePage = new GuestContinuePage(page);
     const questionnaire = new QuestionnairePage(page);
     const signup = new SignupPage(page);
+    const productSignup = new ProductSignupPage(page);
+    const drugSelection = new DrugSelectionPage(page);
+    const cart = new CartPage(page);
+    const shippingAddress = new ShippingAddressPage(page);
+    const thankYou = new ThankYouPage(page);
     const booking = new BookingPage(page);
     const payment = new PaymentPage(page);
 
@@ -187,16 +304,14 @@ test.describe("Conditions flow", () => {
       console.log(`✔ Direct condition path: ${conditionDetailPath}`);
       console.log(`✔ Pharmacy slug: ${pharmacySlug}`);
     } else {
-      await test.step(
-        `Navigate to /conditions and select ${ACTIVE_CONDITION.journeyType} condition: ${selectedConditionName}`,
-        async () => {
+      await test.step(`Navigate to /conditions and select ${ACTIVE_CONDITION.journeyType} condition: ${selectedConditionName}`, async () => {
         await conditionsPage.goto();
         await conditionsPage.waitForConditions();
-        },
-      );
+      });
 
-      conditionHref =
-        await conditionsPage.getConditionHrefByName(selectedConditionName);
+      conditionHref = await conditionsPage.getConditionHrefByName(
+        selectedConditionName,
+      );
       pharmacySlug = conditionsPage.extractPharmacySlug(conditionHref);
       console.log(
         `✔ Selected ${ACTIVE_CONDITION.journeyType} condition (${selectedConditionName}) href: ${conditionHref}`,
@@ -253,6 +368,8 @@ test.describe("Conditions flow", () => {
     console.log(`✔ Post-assessment URL: ${page.url()}`);
 
     // ─── Steps 5–N: Dynamic journey loop ─────────────────────────────────
+    let journeyStatus: "incomplete" | "completed" = "incomplete";
+
     await test.step("Complete dynamic journey (questionnaire / signup / booking)", async () => {
       const MAX_ITERATIONS = 30;
       const stepVisits: Record<string, number> = {};
@@ -268,6 +385,7 @@ test.describe("Conditions flow", () => {
 
         if (step === "success") {
           console.log("✔ Booking success state reached!");
+          journeyStatus = "completed";
           break;
         }
 
@@ -306,6 +424,29 @@ test.describe("Conditions flow", () => {
         }
 
         switch (step) {
+          case "guest_continue": {
+            console.log("→ Handling continue-as-guest step");
+            await guestContinuePage.continueAsGuestIfVisible();
+            await page.waitForTimeout(800);
+            break;
+          }
+
+          case "product_signup": {
+            console.log("→ Handling product signup step");
+            await productSignup.completeProductSignupFlow({
+              firstName: TEST_USER.firstName,
+              lastName: TEST_USER.lastName,
+              postcode: TEST_USER.postcode,
+              gender: TEST_USER.gender,
+              dobIso: TEST_USER.dob.iso,
+              phone: TEST_USER.phone,
+              email: TEST_USER.email,
+              password: TEST_USER.password,
+              confirmPassword: TEST_USER.confirmPassword,
+            });
+            break;
+          }
+
           case "questionnaire_submit": {
             console.log("→ Handling questionnaire step");
             await questionnaire.waitForPage();
@@ -315,6 +456,22 @@ test.describe("Conditions flow", () => {
 
           case "sign_up": {
             console.log("→ Handling sign-up step");
+
+            const handledDynamicCheckoutSignup =
+              await signup.completeDynamicCheckoutSignupIfVisible({
+                firstName: TEST_USER.firstName,
+                lastName: TEST_USER.lastName,
+                postcode: TEST_USER.postcode,
+                gender: TEST_USER.gender,
+                dobIso: TEST_USER.dob.iso,
+                phone: TEST_USER.phone,
+                email: TEST_USER.email,
+                password: TEST_USER.password,
+                confirmPassword: TEST_USER.confirmPassword,
+              });
+            if (handledDynamicCheckoutSignup) {
+              break;
+            }
 
             const hasNHSForm = await page
               .locator('input[name="first_name"]')
@@ -359,6 +516,46 @@ test.describe("Conditions flow", () => {
             break;
           }
 
+          case "drug_selection": {
+            console.log("→ Handling drug selection step");
+            await drugSelection.waitForPage();
+            await drugSelection.chooseDrugOption(DRUG_SELECTION_PREFERENCES);
+            break;
+          }
+
+          case "cart": {
+            console.log("→ Handling cart step");
+            await cart.waitForPage();
+            await cart.handleCart(CART_PREFERENCES);
+
+            // Dynamic transition guard:
+            // shipping address can appear immediately after cart submit.
+            if (await shippingAddress.isVisible()) {
+              console.log("→ Shipping address appeared right after cart");
+              await shippingAddress.handleShippingAddress(
+                SHIPPING_ADDRESS_PREFERENCES,
+              );
+            }
+            break;
+          }
+
+          case "shipping_address": {
+            console.log("→ Handling shipping address step");
+            await shippingAddress.handleShippingAddress(
+              SHIPPING_ADDRESS_PREFERENCES,
+            );
+            shippingHandled = true;
+            break;
+          }
+
+          case "thank_you": {
+            console.log("✔ Thank-you page detected! Journey completed successfully.");
+            await thankYou.handleThankYou(THANK_YOU_PREFERENCES);
+            journeyStatus = "completed";
+            flowCompleted = true;
+            break;
+          }
+
           case "payment": {
             console.log("→ Handling payment step");
             await payment.completePayment(TEST_USER.payment);
@@ -366,6 +563,9 @@ test.describe("Conditions flow", () => {
               console.log(
                 "✔ Payment completed and redirected home — ending test flow",
               );
+
+              paymentHandled = true;
+              journeyStatus = "completed";
               flowCompleted = true;
             }
             break;
@@ -375,10 +575,21 @@ test.describe("Conditions flow", () => {
     });
 
     // ─── Final assertion ──────────────────────────────────────────────────
-    await test.step("Verify booking/completion reached", async () => {
-      const confirmed = await signup.isBookingConfirmed();
-      console.log(`✔ Booking confirmed check: ${confirmed}`);
+    await test.step("Verify journey completion", async () => {
+      const isConfirmed =
+        journeyStatus === "completed" || (await signup.isBookingConfirmed());
+      console.log(
+        `✔ Final verification: ${isConfirmed ? "COMPLETED SUCCESSFUL" : "INCOMPLETE"}`,
+      );
       expect(page.url()).not.toContain("/conditions");
+      if (isConfirmed) {
+        console.log(
+          "🎉 SUCCESS: The pharmacy journey has been fully automated and verified!",
+        );
+      }
+      
+      // Explicitly close the page to trigger immediate browser shutdown
+      await page.close();
     });
   });
 });

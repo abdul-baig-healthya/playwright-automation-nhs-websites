@@ -1,7 +1,7 @@
 export type ConditionQuestionRule = {
   questionPattern: RegExp;
   answerText: string;
-  control: "radio" | "checkbox";
+  control: "radio" | "checkbox" | "input" | "textarea" | "date";
 };
 
 export const SHINGLES_RULES: ConditionQuestionRule[] = [
@@ -89,6 +89,38 @@ export const WEIGHT_MANAGEMENT_RULES: ConditionQuestionRule[] = [
     control: "checkbox",
   },
   {
+    questionPattern: /Date of the last thyroid function test.*applicable/i,
+    answerText: "01-01-2026",
+    control: "date",
+  },
+  {
+    questionPattern: /Current HbA1c.*if diabetic/i,
+    answerText: "5.4",
+    control: "input",
+  },
+  {
+    questionPattern: /Blood pressure reading today.*mmHg/i,
+    answerText: "120/80",
+    control: "input",
+  },
+  {
+    questionPattern:
+      /Would you describe your weight gain as gradual over time or sudden\?/i,
+    answerText: "Gradual",
+    control: "radio",
+  },
+  {
+    questionPattern: /How long have you been trying to manage your weight\?/i,
+    answerText: "12",
+    control: "input",
+  },
+  {
+    questionPattern:
+      /How much does your weight affect your daily life or well-being\?/i,
+    answerText: "7",
+    control: "input",
+  },
+  {
     questionPattern:
       /Have you ever taken any medications to help manage your weight\?/i,
     answerText: "No",
@@ -129,5 +161,90 @@ export const WEIGHT_MANAGEMENT_RULES: ConditionQuestionRule[] = [
     questionPattern: /Timeline for review appointment set:/i,
     answerText: "2 Weeks",
     control: "radio",
+  },
+];
+
+export const ERECTILE_DYSFUNCTION_RULES: ConditionQuestionRule[] = [
+  {
+    questionPattern: /Do you have difficulty getting or keeping an erection\?/i,
+    answerText: "Yes",
+    control: "radio",
+  },
+  {
+    questionPattern:
+      /Have you seen a nurse, doctor or a specialist about your erectile dysfunction\?/i,
+    answerText: "Yes",
+    control: "radio",
+  },
+  {
+    questionPattern:
+      /Has a doctor or medical professional ever advised you to avoid strenuous exercise\?/i,
+    answerText: "Yes",
+    control: "radio",
+  },
+  {
+    questionPattern:
+      /Have you ever had to stop exercise.*felt chest pain.*breathless.*dizzy.*clammy/i,
+    answerText: "Yes",
+    control: "radio",
+  },
+  {
+    questionPattern:
+      /Do you ever experience dizziness or lightheadedness immediately after standing up/i,
+    answerText: "Yes",
+    control: "radio",
+  },
+  {
+    questionPattern:
+      /Are you currently taking any other medication for erectile dysfunction\?/i,
+    answerText: "Yes",
+    control: "radio",
+  },
+  {
+    questionPattern:
+      /Are your erections sometimes fine.*first thing in the morning.*watching pornography/i,
+    answerText: "Yes",
+    control: "radio",
+  },
+  {
+    questionPattern:
+      /Are you currently experiencing any emotional or psychological problems.*stress or anxiety/i,
+    answerText: "Yes",
+    control: "radio",
+  },
+  {
+    questionPattern:
+      /When ordering MUSE or CAVERJECT.*Have you tried tablets already\?/i,
+    answerText: "Yes",
+    control: "radio",
+  },
+  {
+    questionPattern:
+      /Have you ever been shown how to use the medication you are ordering\?/i,
+    answerText: "Yes",
+    control: "radio",
+  },
+  {
+    questionPattern: /Do you have any physical abnormality of the penis/i,
+    answerText: "Yes",
+    control: "radio",
+  },
+  {
+    questionPattern:
+      /Do you have any conditions which make it more likely for you to have prolonged erections/i,
+    answerText: "Yes",
+    control: "radio",
+  },
+  {
+    questionPattern:
+      /Is there anything else that you would like to mention to our doctors/i,
+    answerText: "no",
+    control: "input",
+  },
+  {
+    questionPattern:
+      /Erectile dysfunction treatments can cause a fatal interactions with medicines from the 'Nitrate' family/i,
+    answerText: "Please check",
+    control: "checkbox",
   },
 ];

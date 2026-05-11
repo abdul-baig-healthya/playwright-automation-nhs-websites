@@ -19,6 +19,273 @@ export class SignupPage {
     this.page = page;
   }
 
+  async completeDynamicCheckoutSignupIfVisible(data: {
+    firstName: string;
+    lastName: string;
+    postcode: string;
+    gender: "male" | "female";
+    dobIso: string;
+    phone: string;
+    email: string;
+    password: string;
+    confirmPassword: string;
+  }): Promise<boolean> {
+    const contactUi = await this.page
+      .locator('text=/enter your contact details/i')
+      .first()
+      .isVisible({ timeout: 600 })
+      .catch(() => false);
+    if (contactUi) {
+      return this.completeLifestyleContactSignupIfVisible({
+        phone: data.phone,
+        email: data.email,
+        password: data.password,
+        confirmPassword: data.confirmPassword,
+      });
+    }
+
+    const personalUi = await this.page
+      .locator('text=/enter your personal details/i')
+      .first()
+      .isVisible({ timeout: 600 })
+      .catch(() => false);
+    if (personalUi) {
+      return this.completeCheckoutPersonalDetailsAndSignup({
+        firstName: data.firstName,
+        lastName: data.lastName,
+        postcode: data.postcode,
+        gender: data.gender,
+        dobIso: data.dobIso,
+        password: data.password,
+        confirmPassword: data.confirmPassword,
+      });
+    }
+
+    return false;
+  }
+
+  async completeCheckoutPersonalDetailsAndSignup(data: {
+    firstName: string;
+    lastName: string;
+    postcode: string;
+    gender: "male" | "female";
+    dobIso: string;
+    password: string;
+    confirmPassword: string;
+  }): Promise<boolean> {
+    const isCheckoutDetails = await this.page
+      .locator('text=/enter your personal details/i')
+      .first()
+      .isVisible({ timeout: 800 })
+      .catch(() => false);
+
+    if (!isCheckoutDetails) return false;
+
+    await this.fillNHSPDSForm({
+      firstName: data.firstName,
+      lastName: data.lastName,
+      postcode: data.postcode,
+      gender: data.gender,
+      dobIso: data.dobIso,
+    });
+
+    const continueBtn = this.page
+      .locator('button:has-text("Continue"), button[type="submit"]')
+      .first();
+    if (await continueBtn.isVisible().catch(() => false)) {
+      await continueBtn.click({ force: true }).catch(async () => {
+        await continueBtn.evaluate((el: HTMLElement) => el.click());
+      });
+      await this.page.waitForTimeout(1000);
+    }
+
+    await this.fillPasswordSignupIfVisible(
+      data.password,
+      data.confirmPassword,
+    );
+    return true;
+  }
+
+  async fillPasswordSignupIfVisible(
+    password: string,
+    confirmPassword: string,
+  ): Promise<boolean> {
+    const passwordInput = this.page
+      .locator(
+        [
+          'input[name="password"]',
+          'input[name="newPassword"]',
+          'input[type="password"]',
+          'input[placeholder*="Password"]',
+        ].join(", "),
+      )
+      .first();
+
+    const visible = await passwordInput.isVisible({ timeout: 2000 }).catch(() => false);
+    if (!visible) return false;
+
+    await passwordInput.click({ force: true }).catch(() => {});
+    await passwordInput.fill("").catch(() => {});
+    await passwordInput.fill(password).catch(() => {});
+
+    const confirmInput = this.page
+      .locator(
+        [
+          'input[name="confirmPassword"]',
+          'input[name="confirm_password"]',
+          'input[placeholder*="Confirm"]',
+        ].join(", "),
+      )
+      .first();
+
+    if (await confirmInput.isVisible().catch(() => false)) {
+      await confirmInput.click({ force: true }).catch(() => {});
+      await confirmInput.fill("").catch(() => {});
+      await confirmInput.fill(confirmPassword).catch(() => {});
+    }
+
+    const continueBtn = this.page
+      .locator(
+        [
+          'button:has-text("Continue")',
+          'button:has-text("Sign Up")',
+          'button:has-text("Create Account")',
+          'button[type="submit"]',
+        ].join(", "),
+      )
+      .first();
+
+    if (await continueBtn.isVisible().catch(() => false)) {
+      await continueBtn.click({ force: true }).catch(async () => {
+        await continueBtn.evaluate((el: HTMLElement) => el.click());
+      });
+      await this.page.waitForTimeout(1200);
+    }
+
+    return true;
+  }
+
+  async completeLifestyleContactSignupIfVisible(data: {
+    phone: string;
+    email: string;
+    password: string;
+    confirmPassword: string;
+  }): Promise<boolean> {
+    const titleVisible = await this.page
+      .locator('text=/enter your contact details/i')
+      .first()
+      .isVisible({ timeout: 1200 })
+      .catch(() => false);
+
+    if (!titleVisible) return false;
+
+    const normalizedPhone = this.normalizeUkPhoneForInput(data.phone);
+
+    const phoneInput = this.page
+      .locator(
+        [
+          'input[placeholder*="Enter your phone number" i]',
+          "input.PhoneInputInput",
+          'input[type="tel"]',
+        ].join(", "),
+      )
+      .first();
+
+    const confirmPhoneByPlaceholder = this.page
+      .locator('input[placeholder*="Confirm your phone number" i]')
+      .first();
+    const confirmPhoneFallback = this.page
+      .locator("input.PhoneInputInput, input[type='tel']")
+      .nth(1);
+    const confirmPhoneInput =
+      (await confirmPhoneByPlaceholder.isVisible().catch(() => false))
+        ? confirmPhoneByPlaceholder
+        : confirmPhoneFallback;
+
+    if (await phoneInput.isVisible().catch(() => false)) {
+      await phoneInput.click({ force: true }).catch(() => {});
+      await phoneInput.fill("").catch(() => {});
+      await phoneInput.type(normalizedPhone, { delay: 40 }).catch(() => {});
+    }
+
+    if (await confirmPhoneInput.isVisible().catch(() => false)) {
+      await confirmPhoneInput.click({ force: true }).catch(() => {});
+      await confirmPhoneInput.fill("").catch(() => {});
+      await confirmPhoneInput.type(normalizedPhone, { delay: 40 }).catch(() => {});
+    }
+
+    const emailInput = this.page
+      .locator(
+        [
+          'input[placeholder*="Enter your email address" i]',
+          'input[name="email"]',
+          'input[type="email"]',
+        ].join(", "),
+      )
+      .first();
+    if (await emailInput.isVisible().catch(() => false)) {
+      await emailInput.click({ force: true }).catch(() => {});
+      await emailInput.fill("").catch(() => {});
+      await emailInput.fill(data.email).catch(() => {});
+    }
+
+    const confirmEmailInput = this.page
+      .locator(
+        [
+          'input[placeholder*="Confirm your email address" i]',
+          'input[name="confirmEmail"]',
+        ].join(", "),
+      )
+      .first();
+    if (await confirmEmailInput.isVisible().catch(() => false)) {
+      await confirmEmailInput.click({ force: true }).catch(() => {});
+      await confirmEmailInput.fill("").catch(() => {});
+      await confirmEmailInput.fill(data.email).catch(() => {});
+    }
+
+    const passwordInput = this.page
+      .locator(
+        [
+          'input[placeholder*="Enter password" i]',
+          'input[name="password"]',
+          'input[type="password"]',
+        ].join(", "),
+      )
+      .first();
+    if (await passwordInput.isVisible().catch(() => false)) {
+      await passwordInput.click({ force: true }).catch(() => {});
+      await passwordInput.fill("").catch(() => {});
+      await passwordInput.fill(data.password).catch(() => {});
+    }
+
+    const confirmPasswordInput = this.page
+      .locator(
+        [
+          'input[placeholder*="Confirm password" i]',
+          'input[name="confirmPassword"]',
+        ].join(", "),
+      )
+      .first();
+    if (await confirmPasswordInput.isVisible().catch(() => false)) {
+      await confirmPasswordInput.click({ force: true }).catch(() => {});
+      await confirmPasswordInput.fill("").catch(() => {});
+      await confirmPasswordInput.fill(data.confirmPassword).catch(() => {});
+    }
+
+    const signUpButton = this.page
+      .locator('button:has-text("Sign Up"), button:has-text("Sign up"), button[type="submit"]')
+      .first();
+
+    if (await signUpButton.isVisible().catch(() => false)) {
+      await signUpButton.click({ force: true }).catch(async () => {
+        await signUpButton.evaluate((el: HTMLElement) => el.click());
+      });
+      await this.page.waitForTimeout(1500);
+    }
+
+    return true;
+  }
+
   private normalizeUkPhoneForInput(phone: string): string {
     const digitsOnly = phone.replace(/\D/g, "");
     if (digitsOnly.startsWith("44") && digitsOnly.length > 10) {

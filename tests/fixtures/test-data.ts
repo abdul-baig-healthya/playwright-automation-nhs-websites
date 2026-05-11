@@ -16,6 +16,8 @@ export const TEST_USER = {
   email: "lloyd.p2@yopmail.com",
   guardianName: "Tonny stark",
   phone: "447467059973",
+  password: "Test@1234",
+  confirmPassword: "Test@1234",
   payment: {
     cardholderName: "Jhon Smith",
     cardNumber: "4005519200000004",
@@ -38,8 +40,8 @@ export const CONDITION_CATALOG: Record<ConditionJourneyType, string> = {
  */
 export const ACTIVE_CONDITION = {
   // journeyType: "nhs" as ConditionJourneyType,
-  journeyType: "private" as ConditionJourneyType,
-  // journeyType: "lifestyle" as ConditionJourneyType,
+  // journeyType: "private" as ConditionJourneyType,
+  journeyType: "lifestyle" as ConditionJourneyType,
 };
 
 export function getActiveConditionName(): string {
@@ -105,4 +107,100 @@ export const BOOKING_PREFERENCES: BookingPreferences = {
   autoMoveToNextDate: true,
 
   maxDateAttempts: 10,
+};
+
+export interface DrugSelectionPreferences {
+  /**
+   * Example: "25 mg", "50 mg", "100 mg"
+   */
+  strength?: string;
+
+  /**
+   * Example: "4 tablets", "6 tablets", "8 tablets", "30 tablets"
+   */
+  packSize?: string;
+}
+
+export const DRUG_SELECTION_PREFERENCES: DrugSelectionPreferences = {
+  strength: "100 mg",
+  packSize: "6 tablets",
+};
+
+export type CartQuantityAction = "plus" | "minus" | "none";
+export type CartPrimaryAction =
+  | "Continue Shopping"
+  | "Proceed To Checkout"
+  | "none";
+
+export interface CartPreferences {
+  /**
+   * Quantity button action.
+   */
+  quantityAction: CartQuantityAction;
+
+  /**
+   * Number of times to click + or -.
+   */
+  quantityClicks: number;
+
+  /**
+   * Delete first product row when true.
+   */
+  deleteProduct: boolean;
+
+  /**
+   * Coupon code to apply.
+   * Apply is clicked only when this value is non-empty.
+   */
+  couponCode?: string;
+
+  /**
+   * Choose final cart CTA.
+   */
+  action: CartPrimaryAction;
+}
+
+export const CART_PREFERENCES: CartPreferences = {
+  quantityAction: "none",
+  quantityClicks: 0,
+  deleteProduct: false,
+  couponCode: "",
+  action: "Proceed To Checkout",
+};
+
+export type ShippingMode = "delivery" | "pharmacy";
+export type AddressType = "Home" | "Work" | "Other";
+export type AddressAction = "save" | "cancel";
+export type ShippingPaymentMethod = "Credit Card" | "Cash on delivery";
+
+export interface ShippingAddressPreferences {
+  shippingMode: ShippingMode;
+  addressType: AddressType;
+  addressLine1: string;
+  addressLine2?: string;
+  townCity: string;
+  postalCode: string;
+  addressAction: AddressAction;
+  paymentMethod: ShippingPaymentMethod;
+}
+
+export const SHIPPING_ADDRESS_PREFERENCES: ShippingAddressPreferences = {
+  shippingMode: "delivery",
+  addressType: "Home",
+  addressLine1: "221B Baker Street",
+  addressLine2: "",
+  townCity: "London",
+  postalCode: "SW1A 1AA",
+  addressAction: "save",
+  paymentMethod: "Cash on delivery",
+};
+
+export type ThankYouAction = "My Orders" | "Continue Shopping";
+
+export interface ThankYouPreferences {
+  action: ThankYouAction;
+}
+
+export const THANK_YOU_PREFERENCES: ThankYouPreferences = {
+  action: "My Orders",
 };

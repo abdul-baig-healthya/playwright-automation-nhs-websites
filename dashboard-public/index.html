@@ -735,7 +735,7 @@
         artifTraces.innerHTML = "";
         artifacts.traces.forEach(url => {
           const name = url.split("/").pop();
-          const traceViewUrl = `https://trace.playwright.dev/?trace=${encodeURIComponent(window.location.origin + url)}`;
+          const traceViewUrl = `${window.location.origin}/trace-viewer/index.html?trace=${encodeURIComponent(window.location.origin + url)}`;
           const a = document.createElement("a");
           a.href = traceViewUrl; a.target = "_blank";
           a.className = "artifact-item";

@@ -7,6 +7,7 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "dashboard-public")));
 app.use("/test-results", express.static(path.join(__dirname, "test-results")));
+app.use("/trace-viewer", express.static(path.join(__dirname, "node_modules/playwright-core/lib/vite/traceViewer")));
 
 const TEST_DATA_PATH = path.join(__dirname, "tests/fixtures/test-data.ts");
 const PHARMACIES_PATH = path.join(__dirname, "tests/fixtures/pharmacies.ts");
@@ -370,7 +371,9 @@ app.get("/api/run-tests", (req, res) => {
   const runStartTime = Date.now();
   lastRunStartTime = runStartTime;
 
-  const args = ["playwright", "test", "--reporter=list", "--headed"];
+  const hasDisplay = !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY || process.platform === "darwin" || process.platform === "win32");
+  const args = ["playwright", "test", "--reporter=list"];
+  if (hasDisplay) args.push("--headed");
   if (project) args.push(`--project=${project}`);
   // Prefer file:line targeting. Also allow grep within a file if no line number.
   if (file) {

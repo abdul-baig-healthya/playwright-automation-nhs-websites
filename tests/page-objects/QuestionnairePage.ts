@@ -1,6 +1,7 @@
 import { Page } from "@playwright/test";
 import { getActiveConditionName } from "../fixtures/test-data";
 import {
+  ERECTILE_DYSFUNCTION_RULES,
   SHINGLES_RULES,
   WEIGHT_MANAGEMENT_RULES,
 } from "./ConditionQuestionnaireRules";
@@ -58,6 +59,14 @@ export class QuestionnairePage {
     for (let step = 0; step < this.MAX_QUESTIONS; step++) {
       await this.page.waitForTimeout(200); // brief pause for animations
 
+      // Guard: once drug selection is visible, stop questionnaire handling.
+      if (await this.isOnDrugSelectionPage()) {
+        console.log(
+          "[QuestionnairePage] Drug selection UI detected — exiting questionnaire handler",
+        );
+        return;
+      }
+
       // Guard: once payment is visible, stop questionnaire handling immediately.
       if (await this.isOnPaymentPage()) {
         console.log(
@@ -77,6 +86,7 @@ export class QuestionnairePage {
       if (!advanced && !answered) {
         // No question found and no button — might be loading or done
         await this.page.waitForTimeout(1000);
+        if (await this.isOnDrugSelectionPage()) return;
         if (await this.isOnSignupOrBookingPage()) return;
       }
     }
@@ -695,6 +705,137 @@ export class QuestionnairePage {
     return false;
   }
 
+  private async fillInputByRule(
+    value: string,
+    customScope?: ReturnType<Page["locator"]>,
+  ): Promise<boolean> {
+    const scope = customScope ?? this.getActiveQuestionScope();
+    const inputs = scope.locator(
+      [
+        'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([disabled]):not([readonly])',
+        "textarea:not([disabled]):not([readonly])",
+      ].join(", "),
+    );
+    const count = await inputs.count().catch(() => 0);
+    if (!count) return false;
+
+    for (let i = 0; i < count; i++) {
+      const input = inputs.nth(i);
+      if (!(await input.isVisible().catch(() => false))) continue;
+      if (!(await input.isEnabled().catch(() => false))) continue;
+      if ((await input.isEditable().catch(() => false)) === false) continue;
+
+      await input.scrollIntoViewIfNeeded().catch(() => {});
+      await input.click({ force: true }).catch(() => {});
+      await input.fill("").catch(() => {});
+      await input.fill(value).catch(() => {});
+      const inputType = (
+        (await input.getAttribute("type").catch(() => "")) ?? ""
+      )
+        .toLowerCase()
+        .trim();
+      if (inputType === "number") {
+        // number inputs can reject non-numeric chars during fill; type as fallback
+        await input.fill("").catch(() => {});
+        await input
+          .type(value.replace(/[^\d.]/g, ""), { delay: 20 })
+          .catch(() => {});
+      }
+      await input.blur().catch(() => {});
+      await this.page.waitForTimeout(250);
+
+      const filledValue = await input.inputValue().catch(() => "");
+      const normalizedActual = (filledValue ?? "").replace(/\s+/g, "").trim();
+      const normalizedExpected = value.replace(/\s+/g, "").trim();
+      if (!normalizedActual.length) continue;
+      if (inputType === "number") {
+        if (normalizedActual === normalizedExpected.replace(/[^\d.]/g, ""))
+          return true;
+      } else if (
+        normalizedActual === normalizedExpected ||
+        normalizedActual.includes(normalizedExpected)
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private async fillDateByRule(
+    value: string,
+    customScope?: ReturnType<Page["locator"]>,
+  ): Promise<boolean> {
+    const scope = customScope ?? this.getActiveQuestionScope();
+    const dateInputs = scope.locator(
+      [
+        ".ant-picker input:not([disabled]):not([readonly])",
+        'input[type="date"]:not([disabled]):not([readonly])',
+        'input[placeholder*="DD"]:not([disabled]):not([readonly])',
+        'input[placeholder*="dd"]:not([disabled]):not([readonly])',
+      ].join(", "),
+    );
+    const dateInputCount = await dateInputs.count().catch(() => 0);
+
+    if (!dateInputCount) return false;
+
+    const candidateValues = [
+      value,
+      value.replace(/-/g, "/"),
+      value.replace(/-/g, ""),
+      value.replace(/^(\d{2})-(\d{2})-(\d{4})$/, "$3-$2-$1"),
+      value.replace(/^(\d{2})-(\d{2})-(\d{4})$/, "$1/$2/$3"),
+      value.replace(/^(\d{2})-(\d{2})-(\d{4})$/, "$1$2$3"),
+    ];
+
+    for (let i = 0; i < dateInputCount; i++) {
+      const dateInput = dateInputs.nth(i);
+
+      if (!(await dateInput.isVisible().catch(() => false))) continue;
+      if (!(await dateInput.isEnabled().catch(() => false))) continue;
+      if ((await dateInput.isEditable().catch(() => false)) === false) continue;
+
+      await dateInput.scrollIntoViewIfNeeded().catch(() => {});
+      await dateInput.click({ force: true }).catch(() => {});
+
+      for (const candidate of candidateValues) {
+        const normalized = candidate.replace(
+          /^(\d{2})\/(\d{2})\/(\d{4})$/,
+          "$1-$2-$3",
+        );
+
+        // AntD date inputs can be masked/controlled and may ignore direct fill().
+        // Use keyboard typing after clearing to mimic real user input.
+        await dateInput.click({ force: true }).catch(() => {});
+        await this.page.keyboard.press("Meta+A").catch(() => {});
+        await this.page.keyboard.press("Control+A").catch(() => {});
+        await this.page.keyboard.press("Backspace").catch(() => {});
+
+        await dateInput.fill("").catch(() => {});
+        await dateInput.type(normalized, { delay: 30 }).catch(() => {});
+        await this.page.keyboard.press("Tab").catch(() => {});
+
+        const afterType = await dateInput.inputValue().catch(() => "");
+        if (!(afterType ?? "").trim().length) {
+          await dateInput.fill(normalized).catch(() => {});
+        }
+
+        await this.page.keyboard.press("Enter").catch(() => {});
+        await dateInput.blur().catch(() => {});
+        await this.page.waitForTimeout(300);
+        const filledValue = await dateInput.inputValue().catch(() => "");
+        const normalizedFilled = (filledValue ?? "").replace(/\s+/g, "");
+        const expectedDigits = value.replace(/[^\d]/g, "");
+        const filledDigits = normalizedFilled.replace(/[^\d]/g, "");
+        if (normalizedFilled.length > 0 && filledDigits === expectedDigits) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
   private getActiveQuestionScope() {
     return this.page
       .locator(
@@ -709,16 +850,14 @@ export class QuestionnairePage {
   }
 
   private getQuestionHeadingForRule(pattern: RegExp) {
+    // IMPORTANT:
+    // keep heading matching strict to prevent broad container matches that can
+    // make multiple input rules target the same field.
     return this.page
       .locator(
-        [
-          ".questions.required-question",
-          ".questions",
-          ".question-title",
-          '[class*="question"]',
-          "p",
-          "h1, h2, h3, h4, h5, h6",
-        ].join(", "),
+        [".questions.required-question", ".questions", ".question-title"].join(
+          ", ",
+        ),
       )
       .filter({ hasText: pattern })
       .first();
@@ -726,11 +865,18 @@ export class QuestionnairePage {
 
   private async getQuestionScopeForRule(
     pattern: RegExp,
-    control: "radio" | "checkbox",
+    control: "radio" | "checkbox" | "input" | "textarea" | "date",
   ) {
     const heading = this.getQuestionHeadingForRule(pattern);
 
-    const inputType = control === "checkbox" ? "checkbox" : "radio";
+    const predicateByControl =
+      control === "checkbox"
+        ? ".//input[@type='checkbox']"
+        : control === "radio"
+          ? ".//input[@type='radio']"
+          : control === "date"
+            ? ".//input[@type='date'] or .//input[contains(@class,'ant-picker-input')] or .//input[contains(@placeholder,'DD')] or .//input[contains(@placeholder,'dd')]"
+            : ".//input[not(@type='hidden') and not(@type='checkbox') and not(@type='radio')] or .//textarea";
 
     // IMPORTANT FIX:
     // Use nearest questionnaire wrapper instead of ancestor
@@ -738,7 +884,7 @@ export class QuestionnairePage {
       `xpath=ancestor::*[
       contains(@class,"questionnaire-answer-wrapper")
       or contains(@class,"question-container")
-      or .//input[@type='${inputType}']
+      or ${predicateByControl}
     ][1]`,
     );
 
@@ -747,9 +893,7 @@ export class QuestionnairePage {
     }
 
     // fallback
-    return heading.locator(
-      `xpath=following::*[.//input[@type='${inputType}']][1]`,
-    );
+    return heading.locator(`xpath=following::*[${predicateByControl}][1]`);
   }
 
   private fuzzyRuleMatch(questionText: string, pattern: RegExp): boolean {
@@ -779,6 +923,10 @@ export class QuestionnairePage {
   }
 
   private async answerCurrentQuestion(): Promise<boolean> {
+    if (await this.isOnDrugSelectionPage()) {
+      return false;
+    }
+
     const activeCondition = getActiveConditionName().toLowerCase();
 
     // IMPORTANT FIX:
@@ -790,6 +938,7 @@ export class QuestionnairePage {
 
     if (handledByConditionRule) {
       console.log("[QuestionnairePage] Completed visible condition rules");
+      await this.clickConfirmIfVisible();
 
       return true;
     }
@@ -881,12 +1030,21 @@ export class QuestionnairePage {
         .locator('label:has(input[type="radio"])')
         .filter({
           hasText: /I do not have these symptoms|do not have|^No$/i,
-          hasNot: this.page.locator(
-            ".ant-radio-wrapper-disabled, .ant-radio-button-wrapper-disabled",
-          ),
         });
-      if ((await radioLabels.count()) > 0) {
-        await radioLabels.first().click();
+
+      const radioLabelCount = await radioLabels.count();
+      for (let i = 0; i < radioLabelCount; i++) {
+        const label = radioLabels.nth(i);
+        const input = label.locator('input[type="radio"]').first();
+
+        const visible = await label.isVisible().catch(() => false);
+        if (!visible) continue;
+        const enabled = await input.isEnabled().catch(() => false);
+        if (!enabled) continue;
+        const disabledAttr = await input.getAttribute("disabled").catch(() => null);
+        if (disabledAttr !== null) continue;
+
+        await label.click({ force: true }).catch(() => {});
         await this.page.waitForTimeout(300);
         const noSymptomsChecked = await this.isRadioSelectionApplied(
           "I do not have these symptoms",
@@ -984,6 +1142,57 @@ export class QuestionnairePage {
     return false;
   }
 
+  private async clickConfirmIfVisible(): Promise<boolean> {
+    const confirmSelectors = [
+      'button:has-text("Confirm")',
+      'button:has-text("CONFIRM")',
+      'button:has-text("Save")',
+      'button:has-text("SAVE")',
+      'input[type="submit"][value="Confirm"]',
+      'input[type="button"][value="Confirm"]',
+      'input[type="submit"][value="Save"]',
+      'input[type="button"][value="Save"]',
+    ];
+
+    for (const sel of confirmSelectors) {
+      const btn = this.page.locator(sel).first();
+      const visible = await btn.isVisible().catch(() => false);
+      if (!visible) continue;
+
+      const enabled = await btn.isEnabled().catch(() => false);
+      if (!enabled) continue;
+
+      await btn.scrollIntoViewIfNeeded().catch(() => {});
+      await btn.click({ force: true }).catch(async () => {
+        await btn.evaluate((el: HTMLElement) => el.click());
+      });
+      await this.waitForQuestionnaireTransition();
+      return true;
+    }
+
+    // Fallback: scan visible buttons by text and click matching confirm/save.
+    const buttons = this.page.locator("button");
+    const count = await buttons.count().catch(() => 0);
+    for (let i = 0; i < count; i++) {
+      const btn = buttons.nth(i);
+      const visible = await btn.isVisible().catch(() => false);
+      if (!visible) continue;
+      const enabled = await btn.isEnabled().catch(() => false);
+      if (!enabled) continue;
+      const text = ((await btn.textContent().catch(() => "")) ?? "").trim();
+      if (!/confirm|save/i.test(text)) continue;
+
+      await btn.scrollIntoViewIfNeeded().catch(() => {});
+      await btn.click({ force: true }).catch(async () => {
+        await btn.evaluate((el: HTMLElement) => el.click());
+      });
+      await this.waitForQuestionnaireTransition();
+      return true;
+    }
+
+    return false;
+  }
+
   private async answerByConditionRules(): Promise<boolean> {
     const activeCondition = getActiveConditionName().toLowerCase();
 
@@ -992,7 +1201,9 @@ export class QuestionnairePage {
         ? WEIGHT_MANAGEMENT_RULES
         : activeCondition === "shingles"
           ? SHINGLES_RULES
-          : [];
+          : activeCondition === "erectile-dysfunction"
+            ? ERECTILE_DYSFUNCTION_RULES
+            : [];
 
     if (rules.length === 0) {
       return false;
@@ -1056,7 +1267,7 @@ export class QuestionnairePage {
       }
 
       // RADIO
-      else {
+      else if (rule.control === "radio") {
         answered =
           (await this.selectRadioInQuestionWrapper(
             rule.questionPattern,
@@ -1064,6 +1275,16 @@ export class QuestionnairePage {
           )) ||
           (await this.selectRadioByHeadingGroup(heading, rule.answerText)) ||
           (await this.selectRadioByText(rule.answerText, scope));
+      }
+
+      // INPUT/TEXTAREA
+      else if (rule.control === "input" || rule.control === "textarea") {
+        answered = await this.fillInputByRule(rule.answerText, scope);
+      }
+
+      // DATE
+      else if (rule.control === "date") {
+        answered = await this.fillDateByRule(rule.answerText, scope);
       }
 
       // delayed AntD verification
@@ -1125,6 +1346,10 @@ export class QuestionnairePage {
     let progressed = false;
 
     for (let attempt = 0; attempt < 5; attempt++) {
+      if (await this.isOnDrugSelectionPage()) {
+        return true;
+      }
+
       if (await this.isOnPaymentPage()) {
         return true;
       }
@@ -1158,6 +1383,9 @@ export class QuestionnairePage {
           [
             'input[name="first_name"]',
             ".appointment-type-radio-group",
+            ".drug-selection-section",
+            ".product-box-ui",
+            'button:has-text("Choose this Option")',
             ".rota-slot",
             ':text("Complete your payment")',
             ':text("Booking Confirmed")',
@@ -1217,6 +1445,26 @@ export class QuestionnairePage {
         return true;
       }
     }
+    return false;
+  }
+
+  private async isOnDrugSelectionPage(): Promise<boolean> {
+    const indicators = [
+      "text=/what.?s your preference\\?/i",
+      ".drug-selection-section",
+      ".product-box-ui",
+      'button:has-text("Choose this Option")',
+    ];
+
+    for (const sel of indicators) {
+      const visible = await this.page
+        .locator(sel)
+        .first()
+        .isVisible()
+        .catch(() => false);
+      if (visible) return true;
+    }
+
     return false;
   }
 

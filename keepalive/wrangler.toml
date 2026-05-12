@@ -2,6 +2,7 @@ name = "playwright-keepalive"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
-# Cron trigger — every 10 minutes
+# Cron trigger — every 1 minute (TESTING — change to */10 when confirmed)
+# crons = ["*/10 * * * *"]
 [triggers]
-crons = ["*/10 * * * *"]
+crons = ["* * * * *"]

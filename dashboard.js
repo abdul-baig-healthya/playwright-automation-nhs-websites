@@ -104,7 +104,7 @@ function readTestData() {
   const src = fs.readFileSync(TEST_DATA_PATH, "utf8");
 
   const get = (key) => {
-    const m = src.match(new RegExp(`${key}:\\s*"([^"]+)"`));
+    const m = src.match(new RegExp(`${key}:\\s*"([^"]*)"`));
     return m ? m[1] : "";
   };
   const getNum = (key) => {
@@ -143,6 +143,8 @@ function readTestData() {
       dobDay: get("day"),
       dobMonth: get("month"),
       dobYear: get("year"),
+      password: get("password"),
+      confirmPassword: get("confirmPassword"),
     },
     payment: {
       cardholderName: get("cardholderName"),
@@ -159,6 +161,30 @@ function readTestData() {
       preferredTime: get("preferredTime"),
       autoMoveToNextDate: getBool("autoMoveToNextDate"),
       maxDateAttempts: getNum("maxDateAttempts"),
+    },
+    drug: {
+      strength: get("strength"),
+      packSize: get("packSize"),
+    },
+    cart: {
+      quantityAction: get("quantityAction"),
+      quantityClicks: getNum("quantityClicks"),
+      deleteProduct: getBool("deleteProduct"),
+      couponCode: (() => { const m = src.match(/couponCode:\s*"([^"]*)"/); return m ? m[1] : ""; })(),
+      action: (() => { const m = src.match(/CART_PREFERENCES[\s\S]*?action:\s*"([^"]*)"/); return m ? m[1] : "Proceed To Checkout"; })(),
+    },
+    shipping: {
+      shippingMode: get("shippingMode"),
+      addressType: get("addressType"),
+      addressLine1: get("addressLine1"),
+      addressLine2: (() => { const m = src.match(/addressLine2:\s*"([^"]*)"/); return m ? m[1] : ""; })(),
+      townCity: get("townCity"),
+      postalCode: get("postalCode"),
+      addressAction: get("addressAction"),
+      paymentMethod: get("paymentMethod"),
+    },
+    thankYou: {
+      action: (() => { const m = src.match(/THANK_YOU_PREFERENCES[\s\S]*?action:\s*"([^"]*)"/); return m ? m[1] : "My Orders"; })(),
     },
   };
 }
@@ -187,6 +213,8 @@ function writeTestData(data) {
   setStr("email", u.email);
   setStr("phone", u.phone);
   setStr("guardianName", u.guardianName);
+  setStr("password", u.password || "");
+  setStr("confirmPassword", u.confirmPassword || "");
   // DOB
   src = src.replace(/(day:\s*)"[^"]*"/, `$1"${u.dobDay}"`);
   src = src.replace(/(month:\s*)"[^"]*"/, `$1"${u.dobMonth}"`);
@@ -211,6 +239,30 @@ function writeTestData(data) {
   setStr("preferredTime", b.preferredTime || "");
   setBool("autoMoveToNextDate", b.autoMoveToNextDate);
   setNum("maxDateAttempts", b.maxDateAttempts);
+
+  const d = data.drug || {};
+  setStr("strength", d.strength || "");
+  setStr("packSize", d.packSize || "");
+
+  const c = data.cart || {};
+  setStr("quantityAction", c.quantityAction || "none");
+  setNum("quantityClicks", c.quantityClicks ?? 0);
+  setBool("deleteProduct", c.deleteProduct ?? false);
+  setStr("couponCode", c.couponCode ?? "");
+  src = src.replace(/(CART_PREFERENCES[\s\S]*?action:\s*)"[^"]*"/, `$1"${c.action || "Proceed To Checkout"}"`);
+
+  const s = data.shipping || {};
+  setStr("shippingMode", s.shippingMode || "delivery");
+  setStr("addressType", s.addressType || "Home");
+  setStr("addressLine1", s.addressLine1 || "");
+  src = src.replace(/(SHIPPING_ADDRESS_PREFERENCES[\s\S]*?addressLine2:\s*)"[^"]*"/, `$1"${s.addressLine2 ?? ""}"`);
+  setStr("townCity", s.townCity || "");
+  setStr("postalCode", s.postalCode || "");
+  setStr("addressAction", s.addressAction || "save");
+  setStr("paymentMethod", s.paymentMethod || "Cash on delivery");
+
+  const ty = data.thankYou || {};
+  src = src.replace(/(THANK_YOU_PREFERENCES[\s\S]*?action:\s*)"[^"]*"/, `$1"${ty.action || "My Orders"}"`);
 
   // Active condition — comment out all, uncomment chosen
   const jt = data.condition.journeyType;

@@ -2,8 +2,8 @@ name: Keep Codespace Alive
 
 on:
   schedule:
-    # Every 1 minute — for testing only; change back to */20 after confirming it runs
-    - cron: "* * * * *"
+    # Every 5 minutes — for testing; change to */20 after confirming it runs
+    - cron: "*/5 * * * *"
   workflow_dispatch: # Allow manual trigger from Actions tab
 
 jobs:

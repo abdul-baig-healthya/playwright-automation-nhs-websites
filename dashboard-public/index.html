@@ -402,7 +402,7 @@
         font-size: 12px; color: #c2410c; flex-shrink: 0;
       }
       .td-body {
-        flex: 1; overflow-y: auto; padding: 14px 16px; display: flex;
+        flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px; display: flex;
         flex-direction: column; gap: 12px;
       }
       .td-section {
@@ -424,7 +424,7 @@
       .td-section.collapsed .td-section-header::after { transform: rotate(-90deg); }
       .td-section-body {
         padding: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-        max-height: 800px; overflow: hidden;
+        max-height: 2000px; overflow: hidden;
         transition: max-height .3s ease-in-out, padding .28s ease, opacity .25s ease;
         opacity: 1;
       }

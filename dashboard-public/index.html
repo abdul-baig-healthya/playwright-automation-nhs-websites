@@ -415,12 +415,22 @@
         cursor: pointer; user-select: none;
         display: flex; align-items: center; justify-content: space-between;
       }
-      .td-section-header::after { content: "▾"; font-size: 10px; color: var(--clr-txt-muted); }
-      .td-section.collapsed .td-section-header::after { content: "▸"; }
+      .td-section-header:hover { background: #dde2eb; }
+      .td-section:not(.collapsed) .td-section-header { border-bottom: 1px solid var(--clr-border); }
+      .td-section-header::after {
+        content: "▾"; font-size: 13px; color: var(--clr-accent);
+        transition: transform .22s ease; display: inline-block;
+      }
+      .td-section.collapsed .td-section-header::after { transform: rotate(-90deg); }
       .td-section-body {
         padding: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+        max-height: 800px; overflow: hidden;
+        transition: max-height .3s ease-in-out, padding .28s ease, opacity .25s ease;
+        opacity: 1;
       }
-      .td-section.collapsed .td-section-body { display: none; }
+      .td-section.collapsed .td-section-body {
+        max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0;
+      }
       .td-field { display: flex; flex-direction: column; gap: 3px; }
       .td-field.full { grid-column: 1 / -1; }
       .td-field label { font-size: 11px; color: var(--clr-txt-muted); font-weight: 500; }
@@ -570,7 +580,7 @@
           <div class="td-body">
 
             <!-- User Info -->
-            <div class="td-section">
+            <div class="td-section collapsed">
               <div class="td-section-header">👤 User Info</div>
               <div class="td-section-body">
                 <div class="td-field"><label>First Name *</label><input id="td-firstName" class="td-input" type="text" disabled></div>
@@ -595,7 +605,7 @@
             </div>
 
             <!-- Payment -->
-            <div class="td-section">
+            <div class="td-section collapsed">
               <div class="td-section-header">💳 Payment Card</div>
               <div class="td-section-body">
                 <div class="td-field"><label>Cardholder Name *</label><input id="td-cardholderName" class="td-input" type="text" disabled></div>
@@ -606,7 +616,7 @@
             </div>
 
             <!-- Condition -->
-            <div class="td-section">
+            <div class="td-section collapsed">
               <div class="td-section-header">🏥 Condition</div>
               <div class="td-section-body">
                 <div class="td-field full">
@@ -621,7 +631,7 @@
             </div>
 
             <!-- Booking -->
-            <div class="td-section">
+            <div class="td-section collapsed">
               <div class="td-section-header">📅 Booking</div>
               <div class="td-section-body">
                 <div class="td-field full">
@@ -650,7 +660,7 @@
             </div>
 
             <!-- Drug -->
-            <div class="td-section">
+            <div class="td-section collapsed">
               <div class="td-section-header">💊 Drug Selection</div>
               <div class="td-section-body">
                 <div class="td-field"><label>Strength (e.g. 100 mg)</label><input id="td-strength" class="td-input" type="text" disabled></div>
@@ -659,7 +669,7 @@
             </div>
 
             <!-- Cart -->
-            <div class="td-section">
+            <div class="td-section collapsed">
               <div class="td-section-header">🛒 Cart</div>
               <div class="td-section-body">
                 <div class="td-field">
@@ -688,7 +698,7 @@
             </div>
 
             <!-- Shipping -->
-            <div class="td-section">
+            <div class="td-section collapsed">
               <div class="td-section-header">🚚 Shipping</div>
               <div class="td-section-body">
                 <div class="td-field">
@@ -728,7 +738,7 @@
             </div>
 
             <!-- Thank You -->
-            <div class="td-section">
+            <div class="td-section collapsed">
               <div class="td-section-header">🎉 Thank You Page</div>
               <div class="td-section-body">
                 <div class="td-field full">
@@ -823,6 +833,10 @@
       tdSaveBtn.classList.toggle("enabled", mode === "custom");
       tdSaveBtn.style.cursor = mode === "custom" ? "pointer" : "not-allowed";
       tdSaveStatus.textContent = "";
+      // Expand all sections in custom mode, collapse all in default mode
+      document.querySelectorAll(".td-section").forEach(sec => {
+        sec.classList.toggle("collapsed", mode === "default");
+      });
       tdValidate();
     }
 

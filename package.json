@@ -12,7 +12,12 @@
     "test:paydens": "playwright test --project=\"Paydens\"",
     "test:pharmacist": "playwright test --project=\"The Pharmacist\"",
     "test:localhost": "playwright test --project=\"Localhost\"",
-    "dashboard": "node dashboard.js"
+    "dashboard": "node dashboard.js",
+    "services:start": "pm2 start ecosystem.config.js",
+    "services:stop": "pm2 stop ecosystem.config.js",
+    "services:restart": "pm2 restart ecosystem.config.js",
+    "services:status": "pm2 status",
+    "services:logs": "pm2 logs"
   },
   "devDependencies": {
     "@playwright/test": "^1.44.0",

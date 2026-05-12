@@ -1,0 +1,27 @@
+{
+  "name": "Playwright NHS Automation",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "forwardPorts": [7890, 8080],
+  "portsAttributes": {
+    "7890": {
+      "label": "Dashboard",
+      "onAutoForward": "openBrowser"
+    },
+    "8080": {
+      "label": "Playwright UI",
+      "onAutoForward": "notify"
+    }
+  },
+  "postCreateCommand": "npm install && npx playwright install --with-deps chromium && npm install -g pm2",
+  "postStartCommand": "pm2 start ecosystem.config.js --no-autorestart || pm2 restart ecosystem.config.js ; pm2 save",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-playwright.playwright"
+      ]
+    }
+  }
+}

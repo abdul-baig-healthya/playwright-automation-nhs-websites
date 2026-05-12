@@ -1,0 +1,37 @@
+name: Keep Codespace Alive
+
+on:
+  schedule:
+    # Runs every 20 minutes — well within the minimum idle timeout
+    - cron: "*/1 * * * *"
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Find and wake active Codespace
+        env:
+          GH_TOKEN: ${{ secrets.CODESPACE_TOKEN }}
+        run: |
+          # List codespaces for this repo that are Available or Shutdown
+          CODESPACE=$(gh api /user/codespaces \
+            --jq '.codespaces[]
+                  | select(.repository.full_name == "${{ github.repository }}")
+                  | .name' \
+            | head -1)
+
+          if [ -z "$CODESPACE" ]; then
+            echo "No codespace found for ${{ github.repository }} — nothing to do."
+            exit 0
+          fi
+
+          echo "Found codespace: $CODESPACE"
+
+          # SSH in and run a lightweight command — this wakes the codespace
+          # and resets the inactivity timer. pm2 status also ensures services
+          # are running, restarting them if needed.
+          gh codespace ssh --codespace "$CODESPACE" -- \
+            "pm2 status || true; echo keep-alive-$(date)" || true

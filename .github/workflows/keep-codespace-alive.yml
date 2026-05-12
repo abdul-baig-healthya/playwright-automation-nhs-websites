@@ -35,7 +35,17 @@ jobs:
           if [ "$STATE" = "Shutdown" ]; then
             echo "Restarting codespace..."
             gh api -X POST /user/codespaces/$CODESPACE/start
-            sleep 30
+
+            # Wait up to 90s for the codespace to become Available
+            for i in $(seq 1 18); do
+              sleep 5
+              CURRENT=$(gh api /user/codespaces/$CODESPACE --jq '.state')
+              echo "  Waiting... state=$CURRENT ($((i*5))s)"
+              [ "$CURRENT" = "Available" ] && break
+            done
+            echo "Codespace is now: $(gh api /user/codespaces/$CODESPACE --jq '.state')"
+            # Extra buffer for postStartCommand (pm2) to finish
+            sleep 15
           fi
 
       - name: Ping dashboard to reset idle timer

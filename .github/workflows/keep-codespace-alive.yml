@@ -2,10 +2,10 @@ name: Keep Codespace Alive
 
 on:
   schedule:
-    # Every 20 minutes — well within the 240-min max idle timeout.
+    # TEST MODE: every 5 min — change back to */20 after confirming it works
     # Set your Codespace idle timeout to 240 min at:
     # github.com → Settings → Codespaces → Default idle timeout
-    - cron: "*/20 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch: # Allow manual trigger from Actions tab
 
 jobs:

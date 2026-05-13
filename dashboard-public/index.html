@@ -8,7 +8,7 @@
     <style>
       /* ── Design tokens (Playwright --ui inspired) ─────────────────────────── */
       :root {
-        --sidebar-w: 300px;
+        --sidebar-w: 420px;
         --header-h: 48px;
         --statusbar-h: 32px;
 
@@ -101,6 +101,21 @@
         background: var(--clr-sidebar); border-right: 1px solid var(--clr-border);
         display: flex; flex-direction: column; overflow: hidden;
       }
+      #journey-tabs {
+        display: flex; background: #fff; border-bottom: 1px solid var(--clr-border);
+        padding: 8px 12px; gap: 8px; flex-shrink: 0;
+      }
+      .journey-tab {
+        flex: 1; height: 32px; border: 1px solid var(--clr-border);
+        border-radius: var(--radius-sm); background: #fff; font-size: 11px;
+        font-weight: 600; text-transform: uppercase; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        transition: all .15s; color: var(--clr-txt-muted);
+      }
+      .journey-tab.active {
+        background: var(--clr-accent); border-color: var(--clr-accent); color: #fff;
+      }
+      .journey-tab:hover:not(.active) { background: #f0f2f8; border-color: var(--clr-accent); }
       #search-wrap {
         padding: 10px 12px; border-bottom: 1px solid var(--clr-border); flex-shrink: 0;
       }
@@ -110,9 +125,37 @@
         outline: none; color: var(--clr-txt-sidebar);
       }
       #search:focus { border-color: var(--clr-accent); }
-      #tree {
-        flex: 1; overflow-y: auto; padding: 8px 0;
+      #tree-hdr {
+        padding: 12px 16px 4px; font-size: 11px; font-weight: 700;
+        text-transform: uppercase; color: var(--clr-txt-muted); letter-spacing: .05em;
       }
+      #tree {
+        flex: 1; overflow-y: auto; padding: 4px 0;
+      }
+      .tree-test {
+        display: flex; align-items: flex-start; gap: 10px;
+        padding: 8px 16px; cursor: pointer;
+        border-bottom: 1px solid rgba(0,0,0,.03);
+        transition: background .12s;
+      }
+      .tree-test:hover { background: #ecedf5; }
+      .tree-test.active { background: #e8eeff; }
+      .tree-test .tc-id {
+        font-family: monospace; font-weight: 700; color: var(--clr-accent);
+        background: #eef3ff; padding: 2px 4px; border-radius: 3px; font-size: 10px;
+        flex-shrink: 0; margin-top: 2px;
+      }
+      .tree-test .tc-info { flex: 1; min-width: 0; }
+      .tree-test .tc-title { font-size: 12px; color: var(--clr-txt-sidebar); font-weight: 500; line-height: 1.4; }
+      .tree-test .tc-cat { font-size: 10px; color: var(--clr-txt-muted); margin-top: 2px; }
+      .tree-test .run-test-btn {
+        opacity: 0; font-size: 10px; width: 24px; height: 24px; border-radius: 50%;
+        border: 1px solid var(--clr-accent); color: var(--clr-accent);
+        background: #fff; cursor: pointer; transition: all .15s; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .tree-test:hover .run-test-btn { opacity: 1; }
+      .tree-test .run-test-btn:hover { background: var(--clr-accent); color: #fff; }
 
       /* Tree nodes */
       .tree-file {
@@ -152,34 +195,34 @@
       .tree-suite-hdr .chevron { font-size: 8px; transition: transform .2s; }
       .tree-suite-hdr.open .chevron { transform: rotate(90deg); }
 
-      .tree-test {
+      .legacy-tree-test {
         display: flex; align-items: center; gap: 8px;
         padding: 5px 12px 5px 40px; cursor: pointer;
         margin: 0 4px; border-radius: var(--radius-sm);
         font-size: 12px; color: var(--clr-txt-sidebar);
         transition: background .12s;
       }
-      .tree-test.suite-direct { padding-left: 28px; }
-      .tree-test:hover { background: #ecedf5; }
-      .tree-test.active { background: #e8eeff; color: var(--clr-accent); }
+      .legacy-tree-test.suite-direct { padding-left: 28px; }
+      .legacy-tree-test:hover { background: #ecedf5; }
+      .legacy-tree-test.active { background: #e8eeff; color: var(--clr-accent); }
 
-      .tree-test .test-dot {
+      .legacy-tree-test .test-dot {
         width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
         background: #ccc; transition: background .3s;
       }
-      .tree-test .test-dot.running { background: var(--clr-running); animation: pulse 1s infinite; }
-      .tree-test .test-dot.pass    { background: var(--clr-pass); }
-      .tree-test .test-dot.fail    { background: var(--clr-fail); }
-      .tree-test .test-dot.skip    { background: var(--clr-skip); }
+      .legacy-tree-test .test-dot.running { background: var(--clr-running); animation: pulse 1s infinite; }
+      .legacy-tree-test .test-dot.pass    { background: var(--clr-pass); }
+      .legacy-tree-test .test-dot.fail    { background: var(--clr-fail); }
+      .legacy-tree-test .test-dot.skip    { background: var(--clr-skip); }
 
-      .tree-test .test-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .tree-test .run-test-btn {
+      .legacy-tree-test .test-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .legacy-tree-test .run-test-btn {
         opacity: 0; font-size: 10px; padding: 1px 6px; border-radius: 3px;
         border: 1px solid var(--clr-accent); color: var(--clr-accent);
         background: transparent; cursor: pointer; transition: opacity .15s; flex-shrink: 0;
       }
-      .tree-test:hover .run-test-btn { opacity: 1; }
-      .tree-test:hover .run-test-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+      .legacy-tree-test:hover .run-test-btn { opacity: 1; }
+      .legacy-tree-test:hover .run-test-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
       /* Empty state */
       .empty-state {
@@ -496,9 +539,15 @@
 
       <!-- Sidebar: test tree -->
       <nav id="sidebar">
-        <div id="search-wrap">
-          <input id="search" type="search" placeholder="Filter tests…" autocomplete="off" />
+        <div id="journey-tabs" aria-label="Journey type">
+          <button class="journey-tab" type="button" data-journey="nhs">NHS</button>
+          <button class="journey-tab" type="button" data-journey="private">Private</button>
+          <button class="journey-tab active" type="button" data-journey="lifestyle">Lifestyle</button>
         </div>
+        <div id="search-wrap">
+          <input id="search" type="search" placeholder="Search test cases..." autocomplete="off" />
+        </div>
+        <div id="tree-hdr">Functional Test Cases</div>
         <div id="tree">
           <div class="empty-state">Select a pharmacy to load tests</div>
         </div>
@@ -761,6 +810,7 @@
     let allTests        = [];
     let currentPharmacy = null;
     let filterText      = "";
+    let activeJourneyFilter = "lifestyle";
 
     // Multi-run state
     const runs   = new Map(); // runId → { label, status, logs[], artifacts, startTime, es, elapsedTimer, videoUrls[] }
@@ -782,6 +832,7 @@
     const cntSkip       = document.getElementById("cnt-skip");
     const treeEl        = document.getElementById("tree");
     const searchEl      = document.getElementById("search");
+    const journeyBtns   = document.querySelectorAll(".journey-tab");
     const logEl         = document.getElementById("log");
     const videoEl       = document.getElementById("video-player");
     const vpHolder      = document.getElementById("viewport-placeholder");
@@ -822,6 +873,46 @@
 
     // All inputs/selects in the panel
     const tdInputs = () => document.querySelectorAll("#testdata-panel .td-input, #testdata-panel .td-select");
+
+    const JOURNEY_LABELS = {
+      nhs: "NHS",
+      private: "PRIVATE",
+      lifestyle: "LIFESTYLE",
+    };
+
+    const JOURNEY_SUITE_FILES = {
+      nhs: "tests/e2e/nhs-flows.spec.ts",
+      private: "tests/e2e/private-flows.spec.ts",
+      lifestyle: "tests/e2e/condition-flow.spec.ts",
+    };
+
+    function getJourneyFromTest(testItem) {
+      const file = (testItem.file || "").toLowerCase();
+      const title = `${testItem.fullTitle || ""} ${testItem.title || ""}`.toLowerCase();
+      if (file.includes("nhs-flows.spec")) return "nhs";
+      if (file.includes("private-flows.spec")) return "private";
+      if (file.includes("condition-flow.spec")) return "lifestyle";
+      if (/\bnhs\b/.test(title)) return "nhs";
+      if (/\bprivate\b/.test(title)) return "private";
+      return "lifestyle";
+    }
+
+    function toCaseId(index) {
+      return `TC-${String(index + 1).padStart(3, "0")}`;
+    }
+
+    function deriveCategory(fullTitle, file) {
+      const normalized = (fullTitle || "").split(" > ").slice(0, -1).join(" > ").trim();
+      if (normalized) return normalized;
+      return (file || "").split("/").pop() || "General Flow";
+    }
+
+    function syncJourneyFilter(value) {
+      activeJourneyFilter = value;
+      journeyBtns.forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.journey === value);
+      });
+    }
 
     function tdSetMode(mode) {
       tdMode = mode;
@@ -889,6 +980,7 @@
       const u = data.user || {}, b = data.booking || {}, d = data.drug || {};
       const c = data.cart || {}, s = data.shipping || {}, ty = data.thankYou || {};
       const p = u.payment || {};
+      const journeyType = data.condition?.journeyType || data.condition || "";
 
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ""; };
       const check = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
@@ -909,7 +1001,8 @@
       set("td-cardNumber",      p.cardNumber);
       set("td-expiryDate",      p.expiryDate);
       set("td-securityCode",    p.securityCode);
-      set("td-journeyType",     data.condition);
+      set("td-journeyType",     journeyType);
+      syncJourneyFilter(journeyType);
       set("td-appointmentType", b.appointmentType);
       check("td-useNextAvailableSlot", b.useNextAvailableSlot);
       set("td-preferredMonth",  b.preferredMonth);
@@ -954,7 +1047,7 @@
           cardholderName: val("td-cardholderName"), cardNumber: val("td-cardNumber"),
           expiryDate: val("td-expiryDate"), securityCode: val("td-securityCode"),
         },
-        condition: val("td-journeyType"),
+        condition: { journeyType: val("td-journeyType") },
         booking: {
           appointmentType: val("td-appointmentType"),
           useNextAvailableSlot: boolVal("td-useNextAvailableSlot"),
@@ -1020,7 +1113,23 @@
       tdValidate();
     });
     document.querySelectorAll("#testdata-panel .td-input, #testdata-panel .td-select").forEach(el => {
-      el.addEventListener("input", () => tdValidate());
+      el.addEventListener("input", () => {
+        if (el.id === "td-journeyType") {
+          syncJourneyFilter(el.value);
+          renderTree(allTests);
+        }
+        tdValidate();
+      });
+    });
+    journeyBtns.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const journeyType = btn.dataset.journey;
+        const select = document.getElementById("td-journeyType");
+        if (select) select.value = journeyType;
+        syncJourneyFilter(journeyType);
+        tdValidate();
+        renderTree(allTests);
+      });
     });
     document.querySelectorAll(".td-section-header").forEach(hdr => {
       hdr.addEventListener("click", () => hdr.closest(".td-section").classList.toggle("collapsed"));
@@ -1102,92 +1211,64 @@
       }
     }
 
-    // ── Tree builder ───────────────────────────────────────────────────────────
+    // ── Dynamic functional test cases (derived from discovered tests) ─────────
     function renderTree(tests) {
       const query = filterText.toLowerCase();
-      const visible = query
-        ? tests.filter(t => t.fullTitle.toLowerCase().includes(query) || t.file.toLowerCase().includes(query))
-        : tests;
+      const scoped = tests
+        .filter(t => getJourneyFromTest(t) === activeJourneyFilter)
+        .map((t, idx) => ({
+          id: toCaseId(idx),
+          title: t.title || t.fullTitle || "Unnamed Test",
+          category: deriveCategory(t.fullTitle, t.file),
+          journey: getJourneyFromTest(t),
+          runnable: t,
+        }));
+
+      const visible = scoped.filter(testCase => {
+        const matchesSearch = !query
+          || testCase.id.toLowerCase().includes(query)
+          || testCase.title.toLowerCase().includes(query)
+          || testCase.category.toLowerCase().includes(query);
+        return matchesSearch;
+      });
 
       if (visible.length === 0) {
-        treeEl.innerHTML = '<div class="empty-state">No tests match your filter</div>';
+        const label = activeJourneyFilter.charAt(0).toUpperCase() + activeJourneyFilter.slice(1);
+        treeEl.innerHTML = `<div class="empty-state">No ${label} tests match your filter</div>`;
         return;
       }
 
-      const byFile = {};
-      visible.forEach(t => {
-        if (!byFile[t.file]) byFile[t.file] = {};
-        const parts    = (t.fullTitle || t.title).split(" > ");
-        const testName = parts[parts.length - 1];
-        const suite    = parts.length > 1 ? parts.slice(0, -1).join(" > ") : "__direct__";
-        if (!byFile[t.file][suite]) byFile[t.file][suite] = [];
-        byFile[t.file][suite].push({ ...t, _testName: testName });
-      });
-
       treeEl.innerHTML = "";
-      for (const [file, suites] of Object.entries(byFile)) {
-        const shortName = file.split("/").pop();
-        const fileDiv   = document.createElement("div");
-        fileDiv.className = "tree-file";
-
-        const fileHdr = document.createElement("div");
-        fileHdr.className = "tree-file-hdr open";
-        fileHdr.innerHTML = `
-          <span class="chevron">▶</span>
-          <span class="file-icon">📄</span>
-          <span class="file-name" title="${file}">${shortName}</span>
-          <button class="run-file-btn" data-key="file:${file}" title="Run all tests in this file">Run</button>
-        `;
-        fileHdr.querySelector(".run-file-btn").addEventListener("click", e => {
-          e.stopPropagation();
-          queueRun({ file, label: shortName });
-        });
-        fileHdr.addEventListener("click", e => {
-          if (e.target.classList.contains("run-file-btn")) return;
-          fileHdr.classList.toggle("open");
-          childrenDiv.classList.toggle("open");
-        });
-
-        const childrenDiv = document.createElement("div");
-        childrenDiv.className = "tree-children open";
-
-        for (const [suite, sTests] of Object.entries(suites)) {
-          if (suite === "__direct__") {
-            sTests.forEach(t => childrenDiv.appendChild(makeTestNode(t, "suite-direct")));
-          } else {
-            const suiteHdr = document.createElement("div");
-            suiteHdr.className = "tree-suite-hdr open";
-            suiteHdr.innerHTML = `<span class="chevron">▶</span><span>${suite}</span>`;
-            const suiteChildren = document.createElement("div");
-            suiteChildren.className = "tree-children open";
-            sTests.forEach(t => suiteChildren.appendChild(makeTestNode(t)));
-            suiteHdr.addEventListener("click", () => {
-              suiteHdr.classList.toggle("open");
-              suiteChildren.classList.toggle("open");
-            });
-            childrenDiv.appendChild(suiteHdr);
-            childrenDiv.appendChild(suiteChildren);
-          }
-        }
-        fileDiv.appendChild(fileHdr);
-        fileDiv.appendChild(childrenDiv);
-        treeEl.appendChild(fileDiv);
-      }
+      visible.forEach(testCase => treeEl.appendChild(functionalCaseNode(testCase)));
     }
 
-    function makeTestNode(t, extraClass) {
+    function functionalCaseNode(testCase) {
+      const runnable = testCase.runnable;
       const div = document.createElement("div");
-      div.className = "tree-test" + (extraClass ? " " + extraClass : "");
-      div.dataset.fullTitle = t.fullTitle || t.title;
+      div.className = "tree-test";
       div.innerHTML = `
-        <span class="test-dot" data-title="${t.fullTitle || t.title}"></span>
-        <span class="test-name" title="${t.fullTitle || t.title}">${t._testName || t.title}</span>
-        <button class="run-test-btn" data-key="test:${t.fullTitle || t.title}" title="Run this test">▶</button>
+        <div class="tc-id">${testCase.id}</div>
+        <div class="tc-info">
+          <div class="tc-title">${testCase.title}</div>
+          <div class="tc-cat">${testCase.category}</div>
+        </div>
+        ${runnable
+          ? `<button class="run-test-btn" data-key="test:${runnable.fullTitle || runnable.title}" title="Run this test case">▶</button>`
+          : `<span class="run-test-btn" style="visibility:hidden"></span>`}
       `;
-      div.querySelector(".run-test-btn").addEventListener("click", e => {
-        e.stopPropagation();
-        queueRun({ file: t.file, line: t.line, grep: t.fullTitle, label: t._testName || t.title });
-      });
+      const runBtn = div.querySelector(".run-test-btn");
+      if (runBtn) {
+        runBtn.addEventListener("click", e => {
+          e.stopPropagation();
+          queueRun({
+            file: runnable.file,
+            line: runnable.line,
+            grep: runnable.fullTitle,
+            label: `${testCase.id} ${testCase.title}`,
+            journey: testCase.journey,
+          });
+        });
+      }
       div.addEventListener("click", e => {
         if (e.target.classList.contains("run-test-btn")) return;
         document.querySelectorAll(".tree-test").forEach(n => n.classList.remove("active"));
@@ -1421,8 +1502,14 @@
       pharmacySel.title = busy ? "Cannot change pharmacy while tests are running or queued" : "Select pharmacy";
     }
 
-    async function queueRun({ file, line, grep, label } = {}) {
+    async function queueRun({ file, line, grep, label, journey } = {}) {
       if (!currentPharmacy) { alert("Select a pharmacy first."); return; }
+
+      const runJourney = journey || activeJourneyFilter;
+      if (!file && !grep && !line) {
+        file = JOURNEY_SUITE_FILES[runJourney];
+        label = `${JOURNEY_LABELS[runJourney] || "Selected"} suite`;
+      }
 
       // Prevent duplicate queuing of the same test/file
       const key = grep ? `test:${grep}` : file ? `file:${file}` : null;
@@ -1446,10 +1533,10 @@
         label: runLabel, status: "queued",
         logs: [], artifacts: null, videoUrls: [],
         startTime: null, es: null, elapsedTimer: null, counts: null,
-        queueKey: key
+        queueKey: key, journey: runJourney
       });
 
-      runQueue.push({ runId, file, line, grep, label: runLabel, key });
+      runQueue.push({ runId, file, line, grep, label: runLabel, key, journey: runJourney });
       addRunCard(runId);
       selectRun(runId);
       updateQueuePositions();
@@ -1465,7 +1552,7 @@
       const job = runQueue.shift();
       updateQueuePositions();
 
-      const { runId, file, line, grep, label, key } = job;
+      const { runId, file, line, grep, label, key, journey } = job;
       transitionCardToRunning(runId);
       clearLog();
       hideCounts();
@@ -1477,6 +1564,7 @@
       if (line)  params.set("line", line);
       if (grep)  params.set("grep", grep);
       if (label) params.set("label", label);
+      if (journey) params.set("journey", journey);
 
       const es = new EventSource(`/api/run-tests?${params}`);
       const run = runs.get(runId);

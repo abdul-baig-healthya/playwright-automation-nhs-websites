@@ -239,7 +239,7 @@ function writeTestData(data) {
   setStr("expiryDate",     s(p.expiryDate,     defs.payment?.expiryDate));
   setStr("securityCode",   s(p.securityCode,   defs.payment?.securityCode));
 
-  const b = data.booking;
+  const b = data.booking || {};
   setStr("appointmentType", s(b.appointmentType, defs.booking.appointmentType));
   setBool("useNextAvailableSlot", b.useNextAvailableSlot ?? defs.booking.useNextAvailableSlot);
   setStr("preferredMonth", s(b.preferredMonth, defs.booking.preferredMonth));

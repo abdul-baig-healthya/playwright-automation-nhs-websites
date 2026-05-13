@@ -586,14 +586,6 @@
       }
       .td-check-row input[type=checkbox] { cursor: pointer; accent-color: var(--clr-accent); width: 13px; height: 13px; }
 
-      .td-slot-fields {
-        grid-column: 1 / -1; display: grid;
-        grid-template-columns: 1fr 1fr; gap: 10px;
-        padding: 10px; border-radius: var(--radius-sm);
-        background: rgba(124,106,247,0.06); border: 1px solid rgba(124,106,247,0.2);
-      }
-      .td-slot-fields.hidden { display: none; }
-
       /* Scrollbars */
       ::-webkit-scrollbar { width: 5px; height: 5px; }
       ::-webkit-scrollbar-track { background: transparent; }
@@ -796,88 +788,6 @@
               </div>
             </div>
 
-            <!-- Condition -->
-            <div class="td-section collapsed">
-              <div class="td-section-header">🏥 Condition</div>
-              <div class="td-section-body">
-                <div class="td-field full">
-                  <label>Journey Type</label>
-                  <select id="td-journeyType" class="td-select">
-                    <option value="nhs">NHS</option>
-                    <option value="private">Private</option>
-                    <option value="lifestyle">Lifestyle</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <!-- Booking -->
-            <div class="td-section collapsed">
-              <div class="td-section-header">📅 Booking</div>
-              <div class="td-section-body">
-                <div class="td-field full">
-                  <label>Appointment Type</label>
-                  <select id="td-appointmentType" class="td-select">
-                    <option value="Video">Video</option>
-                    <option value="Face to Face">Face to Face</option>
-                    <option value="Phone call">Phone call</option>
-                  </select>
-                </div>
-                <div class="td-check-row">
-                  <input id="td-useNextAvailableSlot" type="checkbox">
-                  <label for="td-useNextAvailableSlot">Use next available slot (skip manual selection)</label>
-                </div>
-                <div id="td-slot-fields" class="td-slot-fields hidden">
-                  <div class="td-field"><label>Preferred Month * (e.g. May 2026)</label><input id="td-preferredMonth" class="td-input" type="text" placeholder="May 2026"></div>
-                  <div class="td-field"><label>Preferred Date * (e.g. 9 May)</label><input id="td-preferredDate" class="td-input" type="text" placeholder="9 May"></div>
-                  <div class="td-field full"><label>Preferred Time * (e.g. 07:00 AM)</label><input id="td-preferredTime" class="td-input" type="text" placeholder="07:00 AM"></div>
-                </div>
-                <div class="td-check-row">
-                  <input id="td-autoMoveToNextDate" type="checkbox">
-                  <label for="td-autoMoveToNextDate">Auto-move to next date if no slots available</label>
-                </div>
-                <div class="td-field"><label>Max Date Attempts</label><input id="td-maxDateAttempts" class="td-input" type="number" min="1"></div>
-              </div>
-            </div>
-
-            <!-- Drug -->
-            <div class="td-section collapsed">
-              <div class="td-section-header">💊 Drug Selection</div>
-              <div class="td-section-body">
-                <div class="td-field"><label>Strength (e.g. 100 mg)</label><input id="td-strength" class="td-input" type="text"></div>
-                <div class="td-field"><label>Pack Size (e.g. 6 tablets)</label><input id="td-packSize" class="td-input" type="text"></div>
-              </div>
-            </div>
-
-            <!-- Cart -->
-            <div class="td-section collapsed">
-              <div class="td-section-header">🛒 Cart</div>
-              <div class="td-section-body">
-                <div class="td-field">
-                  <label>Quantity Action</label>
-                  <select id="td-quantityAction" class="td-select">
-                    <option value="none">None</option>
-                    <option value="plus">Plus (+)</option>
-                    <option value="minus">Minus (−)</option>
-                  </select>
-                </div>
-                <div class="td-field"><label>Quantity Clicks</label><input id="td-quantityClicks" class="td-input" type="number" min="0"></div>
-                <div class="td-check-row">
-                  <input id="td-deleteProduct" type="checkbox">
-                  <label for="td-deleteProduct">Delete product from cart</label>
-                </div>
-                <div class="td-field"><label>Coupon Code</label><input id="td-couponCode" class="td-input" type="text"></div>
-                <div class="td-field full">
-                  <label>Cart Action</label>
-                  <select id="td-cartAction" class="td-select">
-                    <option value="Proceed To Checkout">Proceed To Checkout</option>
-                    <option value="Continue Shopping">Continue Shopping</option>
-                    <option value="none">None</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
             <!-- Shipping -->
             <div class="td-section collapsed">
               <div class="td-section-header">🚚 Shipping</div>
@@ -918,21 +828,7 @@
               </div>
             </div>
 
-            <!-- Thank You -->
-            <div class="td-section collapsed">
-              <div class="td-section-header">🎉 Thank You Page</div>
-              <div class="td-section-body">
-                <div class="td-field full">
-                  <label>Action</label>
-                  <select id="td-thankYouAction" class="td-select">
-                    <option value="My Orders">My Orders</option>
-                    <option value="Continue Shopping">Continue Shopping</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-          </div>
+          </div><!-- end td-body -->
         </div>
 
       </main>
@@ -1007,9 +903,6 @@
     // ── Test Data Panel ────────────────────────────────────────────────────────
     let tdData = null;      // last data loaded from server; used as fallback for empty fields
 
-    const tdSlotFields        = document.getElementById("td-slot-fields");
-    const tdUseNextSlot       = document.getElementById("td-useNextAvailableSlot");
-
     // All inputs/selects in the panel
     const tdInputs = () => document.querySelectorAll("#testdata-panel .td-input, #testdata-panel .td-select");
 
@@ -1056,10 +949,9 @@
 
     function tdFillForm(data) {
       tdData = data;
-      const u = data.user || {}, b = data.booking || {}, d = data.drug || {};
-      const c = data.cart || {}, s = data.shipping || {}, ty = data.thankYou || {};
+      const u = data.user || {};
       const p = data.payment || {};
-      const journeyType = data.condition?.journeyType || data.condition || "";
+      const s = data.shipping || {};
 
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ""; };
       const check = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
@@ -1081,22 +973,6 @@
       set("td-cardNumber",      p.cardNumber);
       set("td-expiryDate",      p.expiryDate);
       set("td-securityCode",    p.securityCode);
-      set("td-journeyType",     journeyType);
-      syncJourneyFilter(journeyType);
-      set("td-appointmentType", b.appointmentType);
-      check("td-useNextAvailableSlot", b.useNextAvailableSlot);
-      set("td-preferredMonth",  b.preferredMonth);
-      set("td-preferredDate",   b.preferredDate);
-      set("td-preferredTime",   b.preferredTime);
-      check("td-autoMoveToNextDate", b.autoMoveToNextDate);
-      set("td-maxDateAttempts", b.maxDateAttempts);
-      set("td-strength",        d.strength);
-      set("td-packSize",        d.packSize);
-      set("td-quantityAction",  c.quantityAction);
-      set("td-quantityClicks",  c.quantityClicks);
-      check("td-deleteProduct", c.deleteProduct);
-      set("td-couponCode",      c.couponCode);
-      set("td-cartAction",      c.action);
       set("td-shippingMode",    s.shippingMode);
       set("td-addressType",     s.addressType);
       set("td-addressLine1",    s.addressLine1);
@@ -1105,15 +981,11 @@
       set("td-postalCode",      s.postalCode);
       set("td-addressAction",   s.addressAction);
       set("td-paymentMethod",   s.paymentMethod);
-      set("td-thankYouAction",  ty.action);
-
-      tdSlotFields.classList.toggle("hidden", !!b.useNextAvailableSlot);
     }
 
     function tdCollectForm() {
       const val = id => (document.getElementById(id) || {}).value || "";
       const boolVal = id => (document.getElementById(id) || {}).checked;
-      const numVal  = id => parseInt(val(id), 10) || 0;
       return {
         user: {
           gender: val("td-gender"),
@@ -1127,28 +999,12 @@
           cardholderName: val("td-cardholderName"), cardNumber: val("td-cardNumber"),
           expiryDate: val("td-expiryDate"), securityCode: val("td-securityCode"),
         },
-        condition: { journeyType: val("td-journeyType") },
-        booking: {
-          appointmentType: val("td-appointmentType"),
-          useNextAvailableSlot: boolVal("td-useNextAvailableSlot"),
-          preferredMonth: val("td-preferredMonth"), preferredDate: val("td-preferredDate"),
-          preferredTime: val("td-preferredTime"),
-          autoMoveToNextDate: boolVal("td-autoMoveToNextDate"),
-          maxDateAttempts: numVal("td-maxDateAttempts"),
-        },
-        drug: { strength: val("td-strength"), packSize: val("td-packSize") },
-        cart: {
-          quantityAction: val("td-quantityAction"), quantityClicks: numVal("td-quantityClicks"),
-          deleteProduct: boolVal("td-deleteProduct"), couponCode: val("td-couponCode"),
-          action: val("td-cartAction"),
-        },
         shipping: {
           shippingMode: val("td-shippingMode"), addressType: val("td-addressType"),
           addressLine1: val("td-addressLine1"), addressLine2: val("td-addressLine2"),
           townCity: val("td-townCity"), postalCode: val("td-postalCode"),
           addressAction: val("td-addressAction"), paymentMethod: val("td-paymentMethod"),
         },
-        thankYou: { action: val("td-thankYouAction") },
       };
     }
 
@@ -1176,16 +1032,8 @@
       }
     }
 
-    tdUseNextSlot.addEventListener("change", () => {
-      tdSlotFields.classList.toggle("hidden", tdUseNextSlot.checked);
-    });
     document.querySelectorAll("#testdata-panel .td-input, #testdata-panel .td-select").forEach(el => {
-      el.addEventListener("input", () => {
-        if (el.id === "td-journeyType") {
-          syncJourneyFilter(el.value);
-          renderTree(allTests);
-        }
-      });
+      el.addEventListener("input", () => {});
     });
     document.querySelectorAll(".td-section-header").forEach(hdr => {
       hdr.addEventListener("click", () => hdr.closest(".td-section").classList.toggle("collapsed"));
@@ -1449,6 +1297,8 @@
       if (run.status === "running") return;
       if (stopBtn) stopBtn.remove();
       if (deqBtn) deqBtn.remove();
+
+      
 
       // Add video button if we have a video
       if (run.videoUrls && run.videoUrls.length) {

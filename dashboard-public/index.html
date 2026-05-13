@@ -526,42 +526,12 @@
         display: none; flex: 1; min-height: 0; flex-direction: column;
         background: var(--clr-main); transition: background var(--transition);
       }
-      .td-toolbar {
-        display: flex; align-items: center; gap: 8px;
-        padding: 10px 16px; border-bottom: 1px solid var(--clr-border);
-        background: var(--clr-sidebar); flex-shrink: 0;
+      .td-info {
+        display: flex; align-items: center; gap: 6px;
+        padding: 8px 16px; border-bottom: 1px solid var(--clr-border);
+        background: rgba(124,106,247,0.06); flex-shrink: 0;
+        font-size: 12px; color: var(--clr-txt-muted);
         transition: background var(--transition), border-color var(--transition);
-      }
-      .td-label { font-size: 11px; color: var(--clr-txt-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-      .td-mode-btn {
-        padding: 4px 14px; border-radius: var(--radius-sm);
-        border: 1px solid var(--clr-border-drk); background: var(--clr-surface);
-        font-size: 12px; font-family: inherit; cursor: pointer; color: var(--clr-txt);
-        transition: all var(--transition); font-weight: 500;
-      }
-      .td-mode-btn.active {
-        background: linear-gradient(135deg, var(--clr-accent), var(--clr-accent-2));
-        border-color: transparent; color: #fff; font-weight: 600;
-        box-shadow: 0 2px 10px rgba(124,106,247,0.4);
-      }
-      .td-save-btn {
-        margin-left: 8px; padding: 4px 14px; border-radius: var(--radius-sm);
-        border: 1px solid var(--clr-border-drk); background: var(--clr-surface);
-        font-size: 12px; font-family: inherit; cursor: not-allowed; color: var(--clr-txt-dim);
-        transition: all var(--transition); font-weight: 500;
-      }
-      .td-save-btn.enabled {
-        cursor: pointer; border-color: var(--clr-pass); color: var(--clr-pass);
-        box-shadow: 0 0 10px rgba(16,217,138,0.15);
-      }
-      .td-save-btn.enabled:hover { background: rgba(16,217,138,0.1); }
-      .td-save-status { font-size: 11px; color: var(--clr-txt-muted); margin-left: 4px; }
-
-      #td-warning {
-        display: none; align-items: center; gap: 8px;
-        padding: 8px 16px; background: rgba(245,88,90,0.08);
-        border-bottom: 1px solid rgba(245,88,90,0.2);
-        font-size: 12px; color: var(--clr-fail); flex-shrink: 0;
       }
 
       .td-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px; }
@@ -605,7 +575,7 @@
         color: var(--clr-txt); background: var(--clr-surface);
         transition: border-color var(--transition), background var(--transition);
       }
-      .td-input:disabled, .td-select:disabled { background: var(--clr-surface); color: var(--clr-txt-muted); opacity: 0.7; }
+
       .td-input:focus, .td-select:focus { outline: none; border-color: var(--clr-accent); box-shadow: 0 0 0 3px rgba(124,106,247,0.15); }
       .td-input.invalid { border-color: var(--clr-fail); box-shadow: 0 0 0 3px rgba(245,88,90,0.12); }
       .td-select option { background: var(--clr-surface); }
@@ -781,38 +751,31 @@
 
         <!-- Test Data panel -->
         <div id="testdata-panel">
-          <div class="td-toolbar">
-            <span class="td-label">Mode:</span>
-            <button id="td-default-btn" class="td-mode-btn active">Default</button>
-            <button id="td-custom-btn"  class="td-mode-btn">Custom</button>
-            <button id="td-save" class="td-save-btn">💾 Save to File</button>
-            <span id="td-save-status" class="td-save-status"></span>
-          </div>
-          <div id="td-warning">⚠ Some required fields are empty — Run All is disabled until all required fields are filled.</div>
+          <div class="td-info">ℹ️ Leave any field empty to use its default value from test-data.ts</div>
           <div class="td-body">
 
             <!-- User Info -->
             <div class="td-section collapsed">
               <div class="td-section-header">👤 User Info</div>
               <div class="td-section-body">
-                <div class="td-field"><label>First Name *</label><input id="td-firstName" class="td-input" type="text" disabled></div>
-                <div class="td-field"><label>Last Name *</label><input id="td-lastName" class="td-input" type="text" disabled></div>
-                <div class="td-field full"><label>Email *</label><input id="td-email" class="td-input" type="text" disabled></div>
-                <div class="td-field"><label>Phone *</label><input id="td-phone" class="td-input" type="text" disabled></div>
-                <div class="td-field"><label>Postcode *</label><input id="td-postcode" class="td-input" type="text" disabled></div>
+                <div class="td-field"><label>First Name *</label><input id="td-firstName" class="td-input" type="text"></div>
+                <div class="td-field"><label>Last Name *</label><input id="td-lastName" class="td-input" type="text"></div>
+                <div class="td-field full"><label>Email *</label><input id="td-email" class="td-input" type="text"></div>
+                <div class="td-field"><label>Phone *</label><input id="td-phone" class="td-input" type="text"></div>
+                <div class="td-field"><label>Postcode *</label><input id="td-postcode" class="td-input" type="text"></div>
                 <div class="td-field">
                   <label>Gender</label>
-                  <select id="td-gender" class="td-select" disabled>
+                  <select id="td-gender" class="td-select">
                     <option value="male">Male</option>
                     <option value="female">Female</option>
                   </select>
                 </div>
-                <div class="td-field"><label>Guardian Name</label><input id="td-guardianName" class="td-input" type="text" disabled></div>
-                <div class="td-field"><label>DOB Day * (DD)</label><input id="td-dobDay" class="td-input" type="text" placeholder="01" disabled></div>
-                <div class="td-field"><label>DOB Month * (MM)</label><input id="td-dobMonth" class="td-input" type="text" placeholder="01" disabled></div>
-                <div class="td-field"><label>DOB Year * (YYYY)</label><input id="td-dobYear" class="td-input" type="text" placeholder="1990" disabled></div>
-                <div class="td-field"><label>Password *</label><input id="td-password" class="td-input" type="text" disabled></div>
-                <div class="td-field"><label>Confirm Password *</label><input id="td-confirmPassword" class="td-input" type="text" disabled></div>
+                <div class="td-field"><label>Guardian Name</label><input id="td-guardianName" class="td-input" type="text"></div>
+                <div class="td-field"><label>DOB Day * (DD)</label><input id="td-dobDay" class="td-input" type="text" placeholder="01"></div>
+                <div class="td-field"><label>DOB Month * (MM)</label><input id="td-dobMonth" class="td-input" type="text" placeholder="01"></div>
+                <div class="td-field"><label>DOB Year * (YYYY)</label><input id="td-dobYear" class="td-input" type="text" placeholder="1990"></div>
+                <div class="td-field"><label>Password *</label><input id="td-password" class="td-input" type="text"></div>
+                <div class="td-field"><label>Confirm Password *</label><input id="td-confirmPassword" class="td-input" type="text"></div>
               </div>
             </div>
 
@@ -820,10 +783,10 @@
             <div class="td-section collapsed">
               <div class="td-section-header">💳 Payment Card</div>
               <div class="td-section-body">
-                <div class="td-field"><label>Cardholder Name *</label><input id="td-cardholderName" class="td-input" type="text" disabled></div>
-                <div class="td-field"><label>Card Number *</label><input id="td-cardNumber" class="td-input" type="text" disabled></div>
-                <div class="td-field"><label>Expiry Date * (MM/YY)</label><input id="td-expiryDate" class="td-input" type="text" placeholder="01/26" disabled></div>
-                <div class="td-field"><label>Security Code *</label><input id="td-securityCode" class="td-input" type="text" disabled></div>
+                <div class="td-field"><label>Cardholder Name *</label><input id="td-cardholderName" class="td-input" type="text"></div>
+                <div class="td-field"><label>Card Number *</label><input id="td-cardNumber" class="td-input" type="text"></div>
+                <div class="td-field"><label>Expiry Date * (MM/YY)</label><input id="td-expiryDate" class="td-input" type="text" placeholder="01/26"></div>
+                <div class="td-field"><label>Security Code *</label><input id="td-securityCode" class="td-input" type="text"></div>
               </div>
             </div>
 
@@ -833,7 +796,7 @@
               <div class="td-section-body">
                 <div class="td-field full">
                   <label>Journey Type</label>
-                  <select id="td-journeyType" class="td-select" disabled>
+                  <select id="td-journeyType" class="td-select">
                     <option value="nhs">NHS</option>
                     <option value="private">Private</option>
                     <option value="lifestyle">Lifestyle</option>
@@ -848,26 +811,26 @@
               <div class="td-section-body">
                 <div class="td-field full">
                   <label>Appointment Type</label>
-                  <select id="td-appointmentType" class="td-select" disabled>
+                  <select id="td-appointmentType" class="td-select">
                     <option value="Video">Video</option>
                     <option value="Face to Face">Face to Face</option>
                     <option value="Phone call">Phone call</option>
                   </select>
                 </div>
                 <div class="td-check-row">
-                  <input id="td-useNextAvailableSlot" type="checkbox" disabled>
+                  <input id="td-useNextAvailableSlot" type="checkbox">
                   <label for="td-useNextAvailableSlot">Use next available slot (skip manual selection)</label>
                 </div>
                 <div id="td-slot-fields" class="td-slot-fields hidden">
-                  <div class="td-field"><label>Preferred Month * (e.g. May 2026)</label><input id="td-preferredMonth" class="td-input" type="text" placeholder="May 2026" disabled></div>
-                  <div class="td-field"><label>Preferred Date * (e.g. 9 May)</label><input id="td-preferredDate" class="td-input" type="text" placeholder="9 May" disabled></div>
-                  <div class="td-field full"><label>Preferred Time * (e.g. 07:00 AM)</label><input id="td-preferredTime" class="td-input" type="text" placeholder="07:00 AM" disabled></div>
+                  <div class="td-field"><label>Preferred Month * (e.g. May 2026)</label><input id="td-preferredMonth" class="td-input" type="text" placeholder="May 2026"></div>
+                  <div class="td-field"><label>Preferred Date * (e.g. 9 May)</label><input id="td-preferredDate" class="td-input" type="text" placeholder="9 May"></div>
+                  <div class="td-field full"><label>Preferred Time * (e.g. 07:00 AM)</label><input id="td-preferredTime" class="td-input" type="text" placeholder="07:00 AM"></div>
                 </div>
                 <div class="td-check-row">
-                  <input id="td-autoMoveToNextDate" type="checkbox" disabled>
+                  <input id="td-autoMoveToNextDate" type="checkbox">
                   <label for="td-autoMoveToNextDate">Auto-move to next date if no slots available</label>
                 </div>
-                <div class="td-field"><label>Max Date Attempts</label><input id="td-maxDateAttempts" class="td-input" type="number" min="1" disabled></div>
+                <div class="td-field"><label>Max Date Attempts</label><input id="td-maxDateAttempts" class="td-input" type="number" min="1"></div>
               </div>
             </div>
 
@@ -875,8 +838,8 @@
             <div class="td-section collapsed">
               <div class="td-section-header">💊 Drug Selection</div>
               <div class="td-section-body">
-                <div class="td-field"><label>Strength (e.g. 100 mg)</label><input id="td-strength" class="td-input" type="text" disabled></div>
-                <div class="td-field"><label>Pack Size (e.g. 6 tablets)</label><input id="td-packSize" class="td-input" type="text" disabled></div>
+                <div class="td-field"><label>Strength (e.g. 100 mg)</label><input id="td-strength" class="td-input" type="text"></div>
+                <div class="td-field"><label>Pack Size (e.g. 6 tablets)</label><input id="td-packSize" class="td-input" type="text"></div>
               </div>
             </div>
 
@@ -886,21 +849,21 @@
               <div class="td-section-body">
                 <div class="td-field">
                   <label>Quantity Action</label>
-                  <select id="td-quantityAction" class="td-select" disabled>
+                  <select id="td-quantityAction" class="td-select">
                     <option value="none">None</option>
                     <option value="plus">Plus (+)</option>
                     <option value="minus">Minus (−)</option>
                   </select>
                 </div>
-                <div class="td-field"><label>Quantity Clicks</label><input id="td-quantityClicks" class="td-input" type="number" min="0" disabled></div>
+                <div class="td-field"><label>Quantity Clicks</label><input id="td-quantityClicks" class="td-input" type="number" min="0"></div>
                 <div class="td-check-row">
-                  <input id="td-deleteProduct" type="checkbox" disabled>
+                  <input id="td-deleteProduct" type="checkbox">
                   <label for="td-deleteProduct">Delete product from cart</label>
                 </div>
-                <div class="td-field"><label>Coupon Code</label><input id="td-couponCode" class="td-input" type="text" disabled></div>
+                <div class="td-field"><label>Coupon Code</label><input id="td-couponCode" class="td-input" type="text"></div>
                 <div class="td-field full">
                   <label>Cart Action</label>
-                  <select id="td-cartAction" class="td-select" disabled>
+                  <select id="td-cartAction" class="td-select">
                     <option value="Proceed To Checkout">Proceed To Checkout</option>
                     <option value="Continue Shopping">Continue Shopping</option>
                     <option value="none">None</option>
@@ -915,33 +878,33 @@
               <div class="td-section-body">
                 <div class="td-field">
                   <label>Shipping Mode</label>
-                  <select id="td-shippingMode" class="td-select" disabled>
+                  <select id="td-shippingMode" class="td-select">
                     <option value="delivery">Delivery</option>
                     <option value="pharmacy">Pharmacy</option>
                   </select>
                 </div>
                 <div class="td-field">
                   <label>Address Type</label>
-                  <select id="td-addressType" class="td-select" disabled>
+                  <select id="td-addressType" class="td-select">
                     <option value="Home">Home</option>
                     <option value="Work">Work</option>
                     <option value="Other">Other</option>
                   </select>
                 </div>
-                <div class="td-field full"><label>Address Line 1 *</label><input id="td-addressLine1" class="td-input" type="text" disabled></div>
-                <div class="td-field full"><label>Address Line 2</label><input id="td-addressLine2" class="td-input" type="text" disabled></div>
-                <div class="td-field"><label>Town / City *</label><input id="td-townCity" class="td-input" type="text" disabled></div>
-                <div class="td-field"><label>Postal Code *</label><input id="td-postalCode" class="td-input" type="text" disabled></div>
+                <div class="td-field full"><label>Address Line 1 *</label><input id="td-addressLine1" class="td-input" type="text"></div>
+                <div class="td-field full"><label>Address Line 2</label><input id="td-addressLine2" class="td-input" type="text"></div>
+                <div class="td-field"><label>Town / City *</label><input id="td-townCity" class="td-input" type="text"></div>
+                <div class="td-field"><label>Postal Code *</label><input id="td-postalCode" class="td-input" type="text"></div>
                 <div class="td-field">
                   <label>Address Action</label>
-                  <select id="td-addressAction" class="td-select" disabled>
+                  <select id="td-addressAction" class="td-select">
                     <option value="save">Save</option>
                     <option value="cancel">Cancel</option>
                   </select>
                 </div>
                 <div class="td-field">
                   <label>Payment Method</label>
-                  <select id="td-paymentMethod" class="td-select" disabled>
+                  <select id="td-paymentMethod" class="td-select">
                     <option value="Cash on delivery">Cash on Delivery</option>
                     <option value="Credit Card">Credit Card</option>
                   </select>
@@ -955,7 +918,7 @@
               <div class="td-section-body">
                 <div class="td-field full">
                   <label>Action</label>
-                  <select id="td-thankYouAction" class="td-select" disabled>
+                  <select id="td-thankYouAction" class="td-select">
                     <option value="My Orders">My Orders</option>
                     <option value="Continue Shopping">Continue Shopping</option>
                   </select>
@@ -1036,14 +999,8 @@
     });
 
     // ── Test Data Panel ────────────────────────────────────────────────────────
-    let tdMode = "default"; // "default" | "custom"
-    let tdData = null;      // last data loaded from server
+    let tdData = null;      // last data loaded from server; used as fallback for empty fields
 
-    const tdDefaultBtn        = document.getElementById("td-default-btn");
-    const tdCustomBtn         = document.getElementById("td-custom-btn");
-    const tdSaveBtn           = document.getElementById("td-save");
-    const tdSaveStatus        = document.getElementById("td-save-status");
-    const tdWarning           = document.getElementById("td-warning");
     const tdSlotFields        = document.getElementById("td-slot-fields");
     const tdUseNextSlot       = document.getElementById("td-useNextAvailableSlot");
 
@@ -1090,65 +1047,8 @@
       });
     }
 
-    function tdSetMode(mode) {
-      tdMode = mode;
-      tdDefaultBtn.classList.toggle("active", mode === "default");
-      tdCustomBtn.classList.toggle("active", mode === "custom");
-      tdInputs().forEach(el => el.disabled = (mode === "default"));
-      document.querySelectorAll("#testdata-panel input[type=checkbox]").forEach(cb => cb.disabled = (mode === "default"));
-      tdSaveBtn.classList.toggle("enabled", mode === "custom");
-      tdSaveBtn.style.cursor = mode === "custom" ? "pointer" : "not-allowed";
-      tdSaveStatus.textContent = "";
-      // Expand all sections in custom mode, collapse all in default mode
-      document.querySelectorAll(".td-section").forEach(sec => {
-        sec.classList.toggle("collapsed", mode === "default");
-      });
-      tdValidate();
-    }
-
-    function tdValidate() {
-      if (tdMode === "default") {
-        tdWarning.style.display = "none";
-        updateRunAllBtn();
-        return true;
-      }
-      const required = [
-        "td-firstName","td-lastName","td-email","td-phone","td-postcode",
-        "td-password","td-confirmPassword","td-dobDay","td-dobMonth","td-dobYear",
-        "td-cardholderName","td-cardNumber","td-expiryDate","td-securityCode",
-        "td-addressLine1","td-townCity","td-postalCode"
-      ];
-      if (!tdUseNextSlot.checked) {
-        required.push("td-preferredMonth","td-preferredDate","td-preferredTime");
-      }
-      let allFilled = true;
-      document.querySelectorAll("#testdata-panel .td-input, #testdata-panel .td-select").forEach(el => el.classList.remove("invalid"));
-      required.forEach(id => {
-        const el = document.getElementById(id);
-        if (el && !el.value.trim()) { el.classList.add("invalid"); allFilled = false; }
-      });
-      tdWarning.style.display = allFilled ? "none" : "flex";
-      updateRunAllBtn();
-      return allFilled;
-    }
-
     function updateRunAllBtn() {
-      if (tdMode === "custom" && !tdValidate_silent()) {
-        btnRunAll.disabled = true;
-      } else {
-        btnRunAll.disabled = (allTests.length === 0 || !currentPharmacy);
-      }
-    }
-
-    function tdValidate_silent() {
-      const required = [
-        "td-firstName","td-lastName","td-email","td-phone","td-postcode",
-        "td-password","td-confirmPassword","td-dobDay","td-dobMonth","td-dobYear",
-        "td-cardholderName","td-cardNumber","td-expiryDate","td-securityCode",
-        "td-addressLine1","td-townCity","td-postalCode"
-      ];
-      if (!tdUseNextSlot.checked) required.push("td-preferredMonth","td-preferredDate","td-preferredTime");
-      return required.every(id => { const el = document.getElementById(id); return el && el.value.trim(); });
+      btnRunAll.disabled = (allTests.length === 0 || !currentPharmacy);
     }
 
     function tdFillForm(data) {
@@ -1259,34 +1159,21 @@
       }
     }
 
-    async function tdSave() {
-      if (!tdValidate()) return false;
-      tdSaveStatus.textContent = "Saving…";
-      tdSaveBtn.classList.remove("enabled");
+    async function tdAutoSave() {
       try {
         const body = tdCollectForm();
         const r = await fetch("/api/test-data", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        if (!r.ok) throw new Error(await r.text());
-        tdSaveStatus.textContent = "✓ Saved";
-        setTimeout(() => { tdSaveStatus.textContent = ""; }, 2500);
-        tdSaveBtn.classList.add("enabled");
-        return true;
+        if (!r.ok) console.warn("Test data auto-save failed:", await r.text());
       } catch(e) {
-        tdSaveStatus.textContent = "✗ " + e.message;
-        tdSaveBtn.classList.add("enabled");
-        return false;
+        console.warn("Test data auto-save error:", e.message);
       }
     }
 
-    tdDefaultBtn.addEventListener("click", () => tdSetMode("default"));
-    tdCustomBtn.addEventListener("click",  () => tdSetMode("custom"));
-    tdSaveBtn.addEventListener("click",    () => { if (tdMode === "custom") tdSave(); });
     tdUseNextSlot.addEventListener("change", () => {
       tdSlotFields.classList.toggle("hidden", tdUseNextSlot.checked);
-      tdValidate();
     });
     document.querySelectorAll("#testdata-panel .td-input, #testdata-panel .td-select").forEach(el => {
       el.addEventListener("input", () => {
@@ -1294,7 +1181,6 @@
           syncJourneyFilter(el.value);
           renderTree(allTests);
         }
-        tdValidate();
       });
     });
     journeyBtns.forEach(btn => {
@@ -1303,7 +1189,6 @@
         const select = document.getElementById("td-journeyType");
         if (select) select.value = journeyType;
         syncJourneyFilter(journeyType);
-        tdValidate();
         renderTree(allTests);
       });
     });
@@ -1691,11 +1576,8 @@
       const key = grep ? `test:${grep}` : file ? `file:${file}` : null;
       if (key && queuedKeys.has(key)) return;
 
-      // If in custom mode, save test data first
-      if (tdMode === "custom") {
-        const ok = await tdSave();
-        if (!ok) return;
-      }
+      // Auto-save test data before running (empty fields fall back to defaults server-side)
+      await tdAutoSave();
 
       const runId    = `run-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const runLabel = label || (file ? file.split("/").pop() : "All tests");

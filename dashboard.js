@@ -192,6 +192,11 @@ function readTestData() {
 function writeTestData(data) {
   let src = fs.readFileSync(TEST_DATA_PATH, "utf8");
 
+  // Load current file values so empty incoming fields fall back to defaults
+  const defs = readTestData();
+  // s(val, def): return val if non-empty, else def
+  const s = (val, def) => (val != null && String(val).trim() !== "") ? String(val) : String(def ?? "");
+
   const setStr = (key, val) => {
     src = src.replace(new RegExp(`(${key}:\\s*)"[^"]*"`), `$1"${val}"`);
   };
@@ -206,66 +211,69 @@ function writeTestData(data) {
   };
 
   const u = data.user;
-  setStr("gender", u.gender);
-  setStr("firstName", u.firstName);
-  setStr("lastName", u.lastName);
-  setStr("postcode", u.postcode);
-  setStr("email", u.email);
-  setStr("phone", u.phone);
-  setStr("guardianName", u.guardianName);
-  setStr("password", u.password || "");
-  setStr("confirmPassword", u.confirmPassword || "");
-  // DOB
-  src = src.replace(/(day:\s*)"[^"]*"/, `$1"${u.dobDay}"`);
-  src = src.replace(/(month:\s*)"[^"]*"/, `$1"${u.dobMonth}"`);
-  src = src.replace(/(year:\s*)"[^"]*"/, `$1"${u.dobYear}"`);
+  setStr("gender",          s(u.gender,          defs.user.gender));
+  setStr("firstName",       s(u.firstName,        defs.user.firstName));
+  setStr("lastName",        s(u.lastName,         defs.user.lastName));
+  setStr("postcode",        s(u.postcode,         defs.user.postcode));
+  setStr("email",           s(u.email,            defs.user.email));
+  setStr("phone",           s(u.phone,            defs.user.phone));
+  setStr("guardianName",    s(u.guardianName,     defs.user.guardianName));
+  setStr("password",        s(u.password,         defs.user.password));
+  setStr("confirmPassword", s(u.confirmPassword,  defs.user.confirmPassword));
+  // DOB — fall back to defaults if any part is empty
+  const dobDay   = s(u.dobDay,   defs.user.dobDay);
+  const dobMonth = s(u.dobMonth, defs.user.dobMonth);
+  const dobYear  = s(u.dobYear,  defs.user.dobYear);
+  src = src.replace(/(day:\s*)"[^"]*"/, `$1"${dobDay}"`);
+  src = src.replace(/(month:\s*)"[^"]*"/, `$1"${dobMonth}"`);
+  src = src.replace(/(year:\s*)"[^"]*"/, `$1"${dobYear}"`);
   // ISO and display derived
-  const iso = `${u.dobYear}-${u.dobMonth.padStart(2, "0")}-${u.dobDay.padStart(2, "0")}`;
-  const display = `${u.dobDay.padStart(2, "0")}/${u.dobMonth.padStart(2, "0")}/${u.dobYear}`;
+  const iso = `${dobYear}-${dobMonth.padStart(2, "0")}-${dobDay.padStart(2, "0")}`;
+  const display = `${dobDay.padStart(2, "0")}/${dobMonth.padStart(2, "0")}/${dobYear}`;
   src = src.replace(/(iso:\s*)"[^"]*"/, `$1"${iso}"`);
   src = src.replace(/(display:\s*)"[^"]*"/, `$1"${display}"`);
 
   const p = data.payment;
-  setStr("cardholderName", p.cardholderName);
-  setStr("cardNumber", p.cardNumber);
-  setStr("expiryDate", p.expiryDate);
-  setStr("securityCode", p.securityCode);
+  setStr("cardholderName", s(p.cardholderName, defs.payment?.cardholderName));
+  setStr("cardNumber",     s(p.cardNumber,     defs.payment?.cardNumber));
+  setStr("expiryDate",     s(p.expiryDate,     defs.payment?.expiryDate));
+  setStr("securityCode",   s(p.securityCode,   defs.payment?.securityCode));
 
   const b = data.booking;
-  setStr("appointmentType", b.appointmentType);
-  setBool("useNextAvailableSlot", b.useNextAvailableSlot);
-  setStr("preferredMonth", b.preferredMonth || "");
-  setStr("preferredDate", b.preferredDate || "");
-  setStr("preferredTime", b.preferredTime || "");
-  setBool("autoMoveToNextDate", b.autoMoveToNextDate);
-  setNum("maxDateAttempts", b.maxDateAttempts);
+  setStr("appointmentType", s(b.appointmentType, defs.booking.appointmentType));
+  setBool("useNextAvailableSlot", b.useNextAvailableSlot ?? defs.booking.useNextAvailableSlot);
+  setStr("preferredMonth", s(b.preferredMonth, defs.booking.preferredMonth));
+  setStr("preferredDate",  s(b.preferredDate,  defs.booking.preferredDate));
+  setStr("preferredTime",  s(b.preferredTime,  defs.booking.preferredTime));
+  setBool("autoMoveToNextDate", b.autoMoveToNextDate ?? defs.booking.autoMoveToNextDate);
+  setNum("maxDateAttempts", b.maxDateAttempts ?? defs.booking.maxDateAttempts);
 
   const d = data.drug || {};
-  setStr("strength", d.strength || "");
-  setStr("packSize", d.packSize || "");
+  setStr("strength", s(d.strength, defs.drug?.strength));
+  setStr("packSize",  s(d.packSize,  defs.drug?.packSize));
 
   const c = data.cart || {};
-  setStr("quantityAction", c.quantityAction || "none");
-  setNum("quantityClicks", c.quantityClicks ?? 0);
-  setBool("deleteProduct", c.deleteProduct ?? false);
-  setStr("couponCode", c.couponCode ?? "");
-  src = src.replace(/(CART_PREFERENCES[\s\S]*?action:\s*)"[^"]*"/, `$1"${c.action || "Proceed To Checkout"}"`);
+  setStr("quantityAction", s(c.quantityAction, defs.cart?.quantityAction) || "none");
+  setNum("quantityClicks", c.quantityClicks ?? defs.cart?.quantityClicks ?? 0);
+  setBool("deleteProduct", c.deleteProduct ?? defs.cart?.deleteProduct ?? false);
+  setStr("couponCode", s(c.couponCode, defs.cart?.couponCode));
+  src = src.replace(/(CART_PREFERENCES[\s\S]*?action:\s*)"[^"]*"/, `$1"${s(c.action, defs.cart?.action) || "Proceed To Checkout"}"`);
 
-  const s = data.shipping || {};
-  setStr("shippingMode", s.shippingMode || "delivery");
-  setStr("addressType", s.addressType || "Home");
-  setStr("addressLine1", s.addressLine1 || "");
-  src = src.replace(/(SHIPPING_ADDRESS_PREFERENCES[\s\S]*?addressLine2:\s*)"[^"]*"/, `$1"${s.addressLine2 ?? ""}"`);
-  setStr("townCity", s.townCity || "");
-  setStr("postalCode", s.postalCode || "");
-  setStr("addressAction", s.addressAction || "save");
-  setStr("paymentMethod", s.paymentMethod || "Cash on delivery");
+  const sh = data.shipping || {};
+  setStr("shippingMode",   s(sh.shippingMode,   defs.shipping?.shippingMode)   || "delivery");
+  setStr("addressType",    s(sh.addressType,    defs.shipping?.addressType)    || "Home");
+  setStr("addressLine1",   s(sh.addressLine1,   defs.shipping?.addressLine1));
+  src = src.replace(/(SHIPPING_ADDRESS_PREFERENCES[\s\S]*?addressLine2:\s*)"[^"]*"/, `$1"${s(sh.addressLine2, defs.shipping?.addressLine2)}"`);
+  setStr("townCity",       s(sh.townCity,       defs.shipping?.townCity));
+  setStr("postalCode",     s(sh.postalCode,     defs.shipping?.postalCode));
+  setStr("addressAction",  s(sh.addressAction,  defs.shipping?.addressAction)  || "save");
+  setStr("paymentMethod",  s(sh.paymentMethod,  defs.shipping?.paymentMethod)  || "Cash on delivery");
 
   const ty = data.thankYou || {};
-  src = src.replace(/(THANK_YOU_PREFERENCES[\s\S]*?action:\s*)"[^"]*"/, `$1"${ty.action || "My Orders"}"`);
+  src = src.replace(/(THANK_YOU_PREFERENCES[\s\S]*?action:\s*)"[^"]*"/, `$1"${s(ty.action, defs.thankYou?.action) || "My Orders"}"`);
 
   // Active condition — comment out all, uncomment chosen
-  const jt = data.condition.journeyType;
+  const jt = s(data.condition?.journeyType, defs.condition?.journeyType) || "nhs";
   src = src.replace(
     /(ACTIVE_CONDITION\s*=\s*\{[^}]*\})/s,
     (block) => {

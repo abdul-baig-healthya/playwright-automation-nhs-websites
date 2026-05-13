@@ -17,10 +17,19 @@ const PHARMACIES_PATH = path.join(__dirname, "tests/fixtures/pharmacies.ts");
 function readPharmacies() {
   const src = fs.readFileSync(PHARMACIES_PATH, "utf8");
   const list = [];
-  const re = /\{\s*name:\s*"([^"]+)"\s*,\s*baseURL:\s*"([^"]+)"(?:\s*,\s*ciSkip:\s*(true|false))?\s*\}/g;
-  let m;
-  while ((m = re.exec(src))) {
-    list.push({ name: m[1], baseURL: m[2], ciSkip: m[3] === "true" });
+  const lines = src.split("\n");
+  let cur = null;
+  for (const line of lines) {
+    const nameM = line.match(/\bname\s*:\s*"([^"]+)"/);
+    const urlM  = line.match(/\bbaseURL\s*:\s*"([^"]+)"/);
+    const skipM = line.match(/\bciSkip\s*:\s*(true|false)/);
+    if (nameM) cur = { name: nameM[1], baseURL: "", ciSkip: false };
+    if (cur && urlM)  cur.baseURL = urlM[1];
+    if (cur && skipM) cur.ciSkip  = skipM[1] === "true";
+    if (cur && cur.baseURL && /^\s*\},?\s*$/.test(line)) {
+      list.push(cur);
+      cur = null;
+    }
   }
   return list;
 }
@@ -358,6 +367,13 @@ app.get("/api/run-tests", (req, res) => {
   const line = req.query.line;
   const label = req.query.label;
   const tdOverridesB64 = req.query.td; // base64 JSON test data overrides from browser
+  // Playwright's --grep is a regex matched against the test's own title (not the
+  // describe-joined fullTitle). Use only the part after the last " > " separator,
+  // and escape regex metacharacters so titles with `→`, `:`, `(`, `)`, etc. match
+  // literally. Required for loop-generated tests that share the same line number.
+  const grepArg = grep
+    ? grep.split(" > ").pop().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    : null;
   const parts = [];
   if (project) parts.push(project);
   parts.push(label || (file ? `${file}${line ? ":" + line : ""}` : "all tests"));
@@ -414,12 +430,13 @@ app.get("/api/run-tests", (req, res) => {
   const runOutputDir = path.join(__dirname, "test-results", `run-${runId}`);
   const args = ["playwright", "test", "--reporter=list", `--output=${runOutputDir}`];
   if (project) args.push(`--project=${project}`);
-  // Prefer file:line targeting. Also allow grep within a file if no line number.
+  // Prefer file:line targeting when available. Always apply grep on top if provided
+  // (grep is essential for loop-generated tests that share the same line number).
   if (file) {
     args.push(line ? `${file}:${line}` : file);
-    if (grep && !line) args.push("--grep", grep);
-  } else if (grep) {
-    args.push("--grep", grep);
+    if (grepArg) args.push("--grep", grepArg);
+  } else if (grepArg) {
+    args.push("--grep", grepArg);
   }
 
   const proc = spawn("npx", args, {

@@ -20,21 +20,7 @@ import { ShippingAddressPage } from "../page-objects/ShippingAddressPage";
 import { ThankYouPage } from "../page-objects/ThankYouPage";
 import { BookingPage } from "../page-objects/BookingPage";
 import { PaymentPage } from "../page-objects/PaymentPage";
-
-// ─── Journey step types ───────────────────────────────────────────────────────
-type JourneyStep =
-  | "guest_continue"
-  | "product_signup"
-  | "questionnaire_submit"
-  | "sign_up"
-  | "appointment_booking"
-  | "drug_selection"
-  | "cart"
-  | "shipping_address"
-  | "thank_you"
-  | "payment"
-  | "success"
-  | "unknown";
+import type { JourneyStep } from "../helpers/journey-types";
 
 let shippingHandled = false;
 let paymentHandled = false;

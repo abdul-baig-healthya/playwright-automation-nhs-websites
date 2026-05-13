@@ -47,9 +47,9 @@ export const CONDITION_CATALOG: Record<ConditionJourneyType, string> = {
  * Keep only one active line uncommented.
  */
 export const ACTIVE_CONDITION = {
-  // journeyType: "nhs" as ConditionJourneyType,
+  journeyType: "nhs" as ConditionJourneyType,
   // journeyType: "private" as ConditionJourneyType,
-  journeyType: "lifestyle" as ConditionJourneyType,
+  // journeyType: "lifestyle" as ConditionJourneyType,
 };
 
 export function getActiveConditionName(): string {

@@ -927,6 +927,27 @@ export class QuestionnairePage {
       return false;
     }
 
+    // Review screen guard: if "Edit Questionnaire" + "Confirm" are visible
+    // (review of previously-answered questions), skip answering and let
+    // progressQuestionnaire click Confirm.
+    const onReviewScreen =
+      (await this.page
+        .locator('button:has-text("Edit Questionnaire")')
+        .first()
+        .isVisible()
+        .catch(() => false)) &&
+      (await this.page
+        .locator('button:has-text("Confirm")')
+        .first()
+        .isVisible()
+        .catch(() => false));
+    if (onReviewScreen) {
+      console.log(
+        "[QuestionnairePage] Questionnaire review screen detected — deferring to Confirm click",
+      );
+      return false;
+    }
+
     const activeCondition = getActiveConditionName().toLowerCase();
 
     // IMPORTANT FIX:
@@ -1095,7 +1116,10 @@ export class QuestionnairePage {
     const numberInput = this.page.locator(
       'input[type="number"], input[inputmode="numeric"]',
     );
-    if (await numberInput.isVisible().catch(() => false)) {
+    if (
+      (await numberInput.isVisible().catch(() => false)) &&
+      (await numberInput.first().isEnabled().catch(() => false))
+    ) {
       const count = await numberInput.count();
       if (count >= 2) {
         // Likely height + weight fields together (health_data_point)
@@ -1122,7 +1146,10 @@ export class QuestionnairePage {
     const textInput = this.page.locator(
       'input[type="text"]:not([name="first_name"]):not([name="last_name"]):not([name="postcode"]), textarea',
     );
-    if (await textInput.isVisible().catch(() => false)) {
+    if (
+      (await textInput.isVisible().catch(() => false)) &&
+      (await textInput.first().isEnabled().catch(() => false))
+    ) {
       await textInput.first().click();
       await textInput.first().clear();
       await textInput.first().fill("None");
@@ -1328,8 +1355,11 @@ export class QuestionnairePage {
 
     for (const sel of buttonSelectors) {
       const btn = this.page.locator(sel).first();
-      if (await btn.isVisible().catch(() => false)) {
-        await btn.click({ force: true });
+      if (
+        (await btn.isVisible().catch(() => false)) &&
+        (await btn.isEnabled().catch(() => false))
+      ) {
+        await btn.click({ force: true, timeout: 5_000 }).catch(() => {});
         return true;
       }
     }

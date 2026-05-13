@@ -910,17 +910,23 @@
       nhs: "NHS",
       private: "PRIVATE",
       lifestyle: "LIFESTYLE",
+      eligibility: "ELIGIBILITY",
+      user_journey: "USER JOURNEY",
     };
 
     const JOURNEY_SUITE_FILES = {
       nhs: "tests/e2e/nhs-flows.spec.ts",
       private: "tests/e2e/private-flows.spec.ts",
       lifestyle: "tests/e2e/condition-flow.spec.ts",
+      eligibility: "tests/e2e/eligibility.spec.ts",
+      user_journey: "tests/e2e/user-journey-flows.spec.ts",
     };
 
     function getJourneyFromTest(testItem) {
       const file = (testItem.file || "").toLowerCase();
       const title = `${testItem.fullTitle || ""} ${testItem.title || ""}`.toLowerCase();
+      if (file.includes("eligibility.spec")) return "eligibility";
+      if (file.includes("user-journey-flows.spec")) return "user_journey";
       if (file.includes("nhs-flows.spec")) return "nhs";
       if (file.includes("private-flows.spec")) return "private";
       if (file.includes("condition-flow.spec")) return "lifestyle";
@@ -1121,8 +1127,8 @@
       treeEl.innerHTML = "";
       visibleTestCases = [];
 
-      const journeyOrder = ["nhs", "private", "lifestyle"];
-      const journeyEmojis = { nhs: "🏥", private: "💊", lifestyle: "🌱" };
+      const journeyOrder = ["nhs", "private", "lifestyle", "eligibility", "user_journey"];
+      const journeyEmojis = { nhs: "🏥", private: "💊", lifestyle: "🌱", eligibility: "✅", user_journey: "🧭" };
 
       // Assign global IDs to all tests
       const allCases = tests.map((t, idx) => ({

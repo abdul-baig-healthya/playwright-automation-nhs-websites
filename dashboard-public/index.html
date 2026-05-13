@@ -1298,7 +1298,15 @@
       if (stopBtn) stopBtn.remove();
       if (deqBtn) deqBtn.remove();
 
-      
+      // Replace stale queue position text with final status label
+      const queuePos = card.querySelector(".rc-queue-pos");
+      if (queuePos) {
+        const lbl = document.createElement("div");
+        lbl.className = "rc-elapsed";
+        lbl.style.color = "var(--clr-txt-dim)";
+        lbl.textContent = "Canceled";
+        queuePos.replaceWith(lbl);
+      }
 
       // Add video button if we have a video
       if (run.videoUrls && run.videoUrls.length) {

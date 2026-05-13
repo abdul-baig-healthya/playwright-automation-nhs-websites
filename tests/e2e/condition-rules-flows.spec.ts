@@ -20,12 +20,12 @@ import type { FlowConfig } from "../fixtures/flow-configs";
 interface ConditionRulesScenario {
   id: string;
   label: string;
-  /** Filter to apply on /conditions. */
-  serviceFilter: "NHS" | "Private";
+  /** Filter to apply on /conditions. Omit for lifestyle (no NHS/Private filter on /lifestyle-treatments). */
+  serviceFilter?: "NHS" | "Private";
   /** Regex matched against the condition href + visible text. */
   conditionPattern: RegExp;
   /** Drives cookie/path setup and dynamic-vs-static signup branching. */
-  conditionJourneyType: "nhs" | "private";
+  conditionJourneyType: "nhs" | "private" | "lifestyle";
   /** Override key passed to QuestionnairePage.answerByConditionRules (via env var). */
   questionnaireRulesKey: "shingles" | "weight management" | "erectile-dysfunction";
   booking: FlowConfig["booking"];
@@ -80,10 +80,10 @@ const SCENARIOS: ConditionRulesScenario[] = [
   },
   {
     id: "CR4",
-    label: "Erectile dysfunction — Private",
-    serviceFilter: "Private",
+    label: "Erectile dysfunction — Lifestyle (Private)",
+    // No serviceFilter — /lifestyle-treatments listing is implicitly private.
     conditionPattern: /erectile[\s-]?dysfunction|\bED\b/i,
-    conditionJourneyType: "private",
+    conditionJourneyType: "lifestyle",
     questionnaireRulesKey: "erectile-dysfunction",
     booking: {
       appointmentType: "Video",
@@ -148,6 +148,36 @@ async function collectMatchingHrefs(
   return matches;
 }
 
+async function collectLifestyleHrefs(
+  page: import("@playwright/test").Page,
+  pattern: RegExp,
+): Promise<string[]> {
+  // Lifestyle cards on /lifestyle-treatments link to /conditions/{slug}#productSection.
+  const links = page.locator(
+    'a[href*="/conditions/"][href*="#productSection"]',
+  );
+  const count = await links.count();
+  const seen = new Set<string>();
+  const matches: string[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const link = links.nth(i);
+    const href = await link.getAttribute("href");
+    if (!href || seen.has(href)) continue;
+    const text = (await link.innerText().catch(() => "")) || "";
+    if (pattern.test(href) || pattern.test(text)) {
+      seen.add(href);
+      matches.push(href);
+    }
+  }
+
+  for (let i = matches.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [matches[i], matches[j]] = [matches[j], matches[i]];
+  }
+  return matches;
+}
+
 test.describe("Condition Rules Flows", () => {
   for (const scenario of SCENARIOS) {
     test(`${scenario.id}: ${scenario.label}`, async ({ page, baseURL }) => {
@@ -161,38 +191,61 @@ test.describe("Condition Rules Flows", () => {
       });
 
       const listing = new ConditionsListingPage(page);
+      const isLifestyle = scenario.conditionJourneyType === "lifestyle";
 
       let matches: string[] = [];
 
       await test.step(
-        `Filter /conditions by ${scenario.serviceFilter} and find "${scenario.conditionPattern}"`,
+        `${isLifestyle ? "Scrape /lifestyle-treatments" : "Filter /conditions by " + scenario.serviceFilter} and find "${scenario.conditionPattern}"`,
         async () => {
+          if (isLifestyle) {
+            await page.goto("/lifestyle-treatments");
+            await page
+              .locator(
+                'button:has-text("Accept All"), button:has-text("Accept Cookies"), button:has-text("Accept")',
+              )
+              .first()
+              .click({ timeout: 4000 })
+              .catch(() => {});
+            await page
+              .locator('a[href*="/conditions/"][href*="#productSection"]')
+              .first()
+              .waitFor({ state: "visible", timeout: 20_000 });
+
+            matches = await collectLifestyleHrefs(page, scenario.conditionPattern);
+            console.log(
+              `📋 Found ${matches.length} lifestyle match(es) for ${scenario.conditionPattern}`,
+            );
+            return;
+          }
+
           await listing.goto();
           await listing.waitForPageLoad();
 
-          try {
-            await listing.selectServiceFilter(scenario.serviceFilter);
-            console.log(`✔ Applied ${scenario.serviceFilter} filter`);
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.log(
-              `⚠ Could not apply ${scenario.serviceFilter} filter (${msg.split("\n")[0]}) — falling back to unfiltered listing`,
-            );
+          if (scenario.serviceFilter) {
+            try {
+              await listing.selectServiceFilter(scenario.serviceFilter);
+              console.log(`✔ Applied ${scenario.serviceFilter} filter`);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.log(
+                `⚠ Could not apply ${scenario.serviceFilter} filter (${msg.split("\n")[0]}) — falling back to unfiltered listing`,
+              );
+            }
+            // Re-wait — filter may re-render the list.
+            await listing.waitForPageLoad().catch(() => {});
           }
-
-          // Re-wait — filter may re-render the list.
-          await listing.waitForPageLoad().catch(() => {});
 
           matches = await collectMatchingHrefs(listing, scenario.conditionPattern);
           console.log(
-            `📋 Found ${matches.length} match(es) for ${scenario.conditionPattern} under ${scenario.serviceFilter}`,
+            `📋 Found ${matches.length} match(es) for ${scenario.conditionPattern}${scenario.serviceFilter ? " under " + scenario.serviceFilter : ""}`,
           );
         },
       );
 
       expect(
         matches.length,
-        `No conditions match ${scenario.conditionPattern} under ${scenario.serviceFilter} filter for this pharmacy`,
+        `No conditions match ${scenario.conditionPattern}${scenario.serviceFilter ? " under " + scenario.serviceFilter + " filter" : ""} for this pharmacy`,
       ).toBeGreaterThan(0);
 
       // Try each matching condition until one runs end-to-end.

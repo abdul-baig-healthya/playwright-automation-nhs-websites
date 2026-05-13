@@ -2,7 +2,7 @@ export type PaymentMethod = "new-card" | "saved-card" | "auto";
 
 export interface FlowConfig {
   name: string;
-  conditionJourneyType: "nhs" | "private";
+  conditionJourneyType: "nhs" | "private" | "lifestyle";
   conditionName: string;
   /** When set, bypasses the /conditions page lookup and navigates directly to this href. */
   conditionHref?: string;

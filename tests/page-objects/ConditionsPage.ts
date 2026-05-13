@@ -138,7 +138,9 @@ export class ConditionsPage {
    * Href format: /{pharmacySlug}/conditions/{conditionSlug}
    */
   extractPharmacySlug(href: string): string {
-    const parts = href.replace(/^\//, "").split("/").filter(Boolean);
+    // Strip hash fragment (e.g. /the-pharmacist/conditions/foo#productSection)
+    const hrefNoHash = href.split("#")[0];
+    const parts = hrefNoHash.replace(/^\//, "").split("/").filter(Boolean);
 
     // Handle both legacy /{pharmacySlug}/conditions/{conditionSlug}
     // and the current root /conditions/{conditionSlug} route.

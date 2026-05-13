@@ -20,14 +20,18 @@ function readPharmacies() {
   const lines = src.split("\n");
   let cur = null;
   for (const line of lines) {
-    const nameM = line.match(/\bname\s*:\s*"([^"]+)"/);
-    const urlM  = line.match(/\bbaseURL\s*:\s*"([^"]+)"/);
-    const skipM = line.match(/\bciSkip\s*:\s*(true|false)/);
+    const nameM  = line.match(/\bname\s*:\s*["']([^"']+)["']/);
+    const urlM   = line.match(/\bbaseURL\s*:\s*["']([^"']+)["']/);
+    const skipM  = line.match(/\bciSkip\s*:\s*(true|false)/);
+    const projM  = line.match(/\bsanityProjectId\s*:\s*["']([^"']+)["']/);
+    // Only start a new entry on name: lines inside the PHARMACY_SITES array
+    // (interface fields have no string literal after the colon, so nameM won't match there)
     if (nameM) cur = { name: nameM[1], baseURL: "", ciSkip: false };
     if (cur && urlM)  cur.baseURL = urlM[1];
     if (cur && skipM) cur.ciSkip  = skipM[1] === "true";
+    if (cur && projM) cur.sanityProjectId = projM[1];
     if (cur && cur.baseURL && /^\s*\},?\s*$/.test(line)) {
-      list.push(cur);
+      list.push({ ...cur });
       cur = null;
     }
   }
@@ -322,6 +326,8 @@ app.get("/api/flow-configs", (_req, res) => {
 });
 
 app.get("/api/pharmacies", (_req, res) => {
+  // No-store prevents Codespaces proxy and browsers from caching stale [] responses
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   try {
     res.json(readPharmacies());
   } catch (e) {

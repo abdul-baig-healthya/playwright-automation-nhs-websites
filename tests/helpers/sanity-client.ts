@@ -136,6 +136,33 @@ export function pickConditionForFlow(
 }
 
 /**
+ * Return ALL conditions in a randomised order (Fisher–Yates), with the pinned
+ * id (USER_JOURNEY_CONDITION_ID) bubbled to the front when it matches. Used by
+ * scenario specs (booking / payment) that don't filter by `userJourneyFlow`
+ * but still want to retry across conditions on per-condition failures.
+ */
+export function shuffleConditions(
+  conditions: SanityCondition[],
+): SanityCondition[] {
+  const shuffled = [...conditions];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  const pinnedId = process.env.USER_JOURNEY_CONDITION_ID;
+  if (pinnedId) {
+    const pinnedIdx = shuffled.findIndex(
+      (c) => String(c.conditionId) === pinnedId,
+    );
+    if (pinnedIdx > 0) {
+      const [pinned] = shuffled.splice(pinnedIdx, 1);
+      shuffled.unshift(pinned);
+    }
+  }
+  return shuffled;
+}
+
+/**
  * Return ALL conditions matching a flow pattern, in a randomised order so the
  * caller can iterate through fallbacks when the first pick isn't visible on
  * /conditions. The pinned id (if set + matching) is always returned first.

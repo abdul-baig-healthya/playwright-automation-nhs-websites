@@ -37,6 +37,11 @@ export class ConditionDetailPage {
 
   async waitForDetailPage(): Promise<boolean> {
     await this.page.waitForLoadState("domcontentloaded");
+    // Wait for React hydration — Next.js pages render the eligibility box
+    // client-side, so domcontentloaded alone is not enough.
+    await this.page
+      .waitForLoadState("networkidle", { timeout: 15_000 })
+      .catch(() => {}); // non-fatal; continue even if some requests linger
     await this.dismissCookieBanner();
 
     const readySelectors = [
@@ -86,6 +91,7 @@ export class ConditionDetailPage {
 
     const hasEligibilityForm = await this.page
       .locator('button:has-text("Check Eligibility")')
+      .filter({ visible: true })
       .first()
       .isVisible()
       .catch(() => false);
@@ -109,6 +115,7 @@ export class ConditionDetailPage {
           .locator(
             'button:has-text("Check Eligibility"), button:has-text("Check eligibility")',
           )
+          .filter({ visible: true })
           .first()
           .scrollIntoViewIfNeeded(),
       );
@@ -200,6 +207,7 @@ export class ConditionDetailPage {
       .locator(
         'button:has-text("Check Eligibility"), button:has-text("Check eligibility")',
       )
+      .filter({ visible: true })
       .first()
       .scrollIntoViewIfNeeded()
       .catch(() => {});
@@ -308,6 +316,7 @@ export class ConditionDetailPage {
         '#check_condition_inner button:has-text("Check Eligibility"), #check_condition_inner :text("Check Eligibility")',
       )
       .filter({ hasText: /Check Eligibility/i })
+      .filter({ visible: true })
       .first();
 
     await btn.scrollIntoViewIfNeeded().catch(() => {});
@@ -540,6 +549,7 @@ export class ConditionDetailPage {
   }): Promise<void> {
     const formVisible = await this.page
       .locator('#check_condition_inner button:has-text("Check Eligibility")')
+      .filter({ visible: true })
       .first()
       .isVisible()
       .catch(() => false);

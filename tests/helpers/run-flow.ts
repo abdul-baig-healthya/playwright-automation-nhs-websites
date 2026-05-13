@@ -15,6 +15,7 @@ type JourneyStep =
   | "appointment_booking"
   | "payment"
   | "success"
+  | "dead_end"
   | "unknown";
 
 async function detectCurrentStep(page: Page): Promise<JourneyStep> {
@@ -46,6 +47,29 @@ async function detectCurrentStep(page: Page): Promise<JourneyStep> {
     '[class*="booking-appointment-success"]',
   ];
   if (await hasVisibleIndicator(successIndicators)) return "success";
+
+  // Dead-end states: condition routed to self-care / referral / ineligible.
+  // These modals have no booking path — we must retry with a different condition.
+  const deadEndIndicators = [
+    ':has-text("You\'ve reached Self care")',
+    ':has-text("You\'ve reached self care")',
+    ':has-text("Reached Self Care")',
+    'a:has-text("End Assessment")',
+    'button:has-text("End Assessment")',
+    ':has-text("Refer to your GP")',
+    ':has-text("Refer to a GP")',
+    ':has-text("Speak to your GP")',
+    ':has-text("Go to A&E")',
+    ':has-text("Call 999")',
+    ':has-text("Call 111")',
+    ':has-text("See a pharmacist")',
+    ':has-text("Not suitable for online consultation")',
+    ':has-text("This service is not available")',
+    ':has-text("Unfortunately we cannot")',
+    ':has-text("not eligible for this service")',
+    ':has-text("You are not eligible")',
+  ];
+  if (await hasVisibleIndicator(deadEndIndicators)) return "dead_end";
 
   const bookingIndicators = [
     ".appointment-type-radio-group",
@@ -134,6 +158,54 @@ export async function runConditionFlow(
 
   const baseUrl = (projectBaseURL ?? process.env.BASE_URL ?? "http://localhost:4005").replace(/\/$/, "");
 
+  // Per-test questionnaire rules override (used by getActiveConditionName()).
+  const previousRulesOverride = process.env.OVERRIDE_ACTIVE_CONDITION;
+  if (config.questionnaireRulesKey) {
+    process.env.OVERRIDE_ACTIVE_CONDITION = config.questionnaireRulesKey;
+    console.log(
+      `↳ Questionnaire rules override: "${config.questionnaireRulesKey}"`,
+    );
+  }
+
+  try {
+    await runConditionFlowImpl(
+      page,
+      config,
+      user,
+      baseUrl,
+      conditionsPage,
+      detailPage,
+      guestContinuePage,
+      questionnaire,
+      signup,
+      booking,
+      payment,
+    );
+  } finally {
+    if (config.questionnaireRulesKey) {
+      if (previousRulesOverride === undefined) {
+        delete process.env.OVERRIDE_ACTIVE_CONDITION;
+      } else {
+        process.env.OVERRIDE_ACTIVE_CONDITION = previousRulesOverride;
+      }
+    }
+  }
+}
+
+async function runConditionFlowImpl(
+  page: Page,
+  config: FlowConfig,
+  user: typeof TEST_USER,
+  baseUrl: string,
+  conditionsPage: ConditionsPage,
+  detailPage: ConditionDetailPage,
+  guestContinuePage: GuestContinuePage,
+  questionnaire: QuestionnairePage,
+  signup: SignupPage,
+  booking: BookingPage,
+  payment: PaymentPage,
+): Promise<void> {
+
   // ── Step 1: Resolve condition href ────────────────────────────────────────
   let conditionHref: string;
   let pharmacySlug: string;
@@ -144,6 +216,11 @@ export async function runConditionFlow(
     conditionHref = conditionDetailPath;
     pharmacySlug = conditionsPage.extractPharmacySlug(conditionDetailPath);
     console.log(`✔ Direct condition path: ${conditionDetailPath}`);
+  } else if (config.conditionHref) {
+    // Caller already resolved the href (e.g. booking/payment specs scrape /conditions themselves)
+    conditionHref = config.conditionHref;
+    pharmacySlug = conditionsPage.extractPharmacySlug(conditionHref);
+    console.log(`✔ Using pre-resolved href (${config.conditionName}): ${conditionHref}`);
   } else {
     await conditionsPage.goto();
     await conditionsPage.waitForConditions();
@@ -202,6 +279,12 @@ export async function runConditionFlow(
     if (step === "success") {
       console.log("✔ Booking success state reached!");
       break;
+    }
+
+    if (step === "dead_end") {
+      throw new Error(
+        `Flow reached a dead-end (self-care/referral/ineligible) for condition "${config.conditionName}" at ${page.url()} — retry with another condition`,
+      );
     }
 
     if (step === "unknown") {

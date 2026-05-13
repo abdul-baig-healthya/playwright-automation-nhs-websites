@@ -65,11 +65,44 @@ export class BookingPage {
         .filter({ hasText: label })
         .first();
       if (await option.isVisible().catch(() => false)) {
+        const isDisabled = await option
+          .evaluate((el) => {
+            const cls = (el as HTMLElement).className || "";
+            const inputDisabled = !!(el as HTMLElement).querySelector(
+              "input[disabled]",
+            );
+            return (
+              cls.includes("disabled") ||
+              cls.includes("ant-radio-disabled") ||
+              cls.includes("ant-radio-button-wrapper-disabled") ||
+              inputDisabled
+            );
+          })
+          .catch(() => false);
+
+        if (isDisabled) {
+          if (prefs.strictAppointmentType) {
+            throw new Error(
+              `Appointment type "${prefs.appointmentType}" not available (disabled)`,
+            );
+          }
+          console.log(
+            `[BookingPage] Appointment type "${label}" is disabled — falling through`,
+          );
+          continue;
+        }
+
         console.log(`[BookingPage] Selecting appointment type: ${label}`);
         await option.click();
         await this.page.waitForTimeout(1500);
         return;
       }
+    }
+
+    if (prefs.strictAppointmentType) {
+      throw new Error(
+        `Appointment type "${prefs.appointmentType}" not available`,
+      );
     }
 
     // Fallback: click first if preferred not found
@@ -81,6 +114,99 @@ export class BookingPage {
       .first();
     await firstRadio.click();
     await this.page.waitForTimeout(1500);
+  }
+
+  /**
+   * Random-strategy date+slot picker:
+   *   1. Randomly navigate forward 0–3 times using the date arrows
+   *   2. Pick a random visible, enabled date cell
+   *   3. Pick a random visible time slot
+   * Returns true if a date and a slot were selected.
+   */
+  async selectRandomDateAndSlot(
+    prefs: BookingPreferences = BOOKING_PREFERENCES,
+  ): Promise<boolean> {
+    const forwardSteps = Math.floor(Math.random() * 4); // 0..3
+    console.log(
+      `[BookingPage] random-date: navigating forward ${forwardSteps} time(s)`,
+    );
+    for (let i = 0; i < forwardSteps; i++) {
+      const ok = await this.navigateDateUsingArrows("next");
+      if (!ok) break;
+      await this.page.waitForTimeout(800);
+    }
+
+    let picked = false;
+    for (let attempt = 0; attempt < prefs.maxDateAttempts; attempt++) {
+      await this.page.waitForTimeout(600);
+      picked = await this.page.evaluate((): boolean => {
+        const allDivs = Array.from(
+          document.querySelectorAll("div[class]"),
+        ) as HTMLElement[];
+        const dateCells = allDivs.filter((div) => {
+          const cls = div.className;
+          return (
+            cls.includes("flex-col") &&
+            cls.includes("items-center") &&
+            cls.includes("cursor-pointer") &&
+            !cls.includes("cursor-not-allowed") &&
+            div.children.length >= 2
+          );
+        });
+        if (dateCells.length === 0) return false;
+        const idx = Math.floor(Math.random() * dateCells.length);
+        dateCells[idx].click();
+        return true;
+      });
+
+      if (picked) {
+        await this.page.waitForTimeout(1500);
+        console.log(`[BookingPage] random-date: picked a random date`);
+        break;
+      }
+
+      const navigated = await this.navigateDateUsingArrows("next");
+      if (!navigated) break;
+    }
+
+    if (!picked) return false;
+
+    const slotGroup = this.page.locator(".rota-slot");
+    if (!(await slotGroup.isVisible({ timeout: 10_000 }).catch(() => false))) {
+      return false;
+    }
+    const slotLabels = slotGroup.locator(
+      "label, .ant-radio-button-wrapper, .ant-radio-wrapper",
+    );
+    const count = await slotLabels.count();
+    if (count === 0) return false;
+
+    // Pick a random non-disabled slot
+    const enabledIndexes: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const slot = slotLabels.nth(i);
+      const disabled = await slot
+        .evaluate((el) => {
+          const cls = (el as HTMLElement).className || "";
+          return (
+            cls.includes("disabled") ||
+            cls.includes("ant-radio-button-wrapper-disabled") ||
+            cls.includes("ant-radio-wrapper-disabled")
+          );
+        })
+        .catch(() => false);
+      if (!disabled) enabledIndexes.push(i);
+    }
+    if (enabledIndexes.length === 0) return false;
+
+    const choice =
+      enabledIndexes[Math.floor(Math.random() * enabledIndexes.length)];
+    await slotLabels.nth(choice).click();
+    await this.page.waitForTimeout(1200);
+    console.log(
+      `[BookingPage] random-date: picked slot index ${choice} of ${enabledIndexes.length} enabled`,
+    );
+    return true;
   }
 
   /**
@@ -749,23 +875,33 @@ export class BookingPage {
       await this.page.waitForTimeout(1500);
     } else {
       // Fall back: select a date, then a time slot
-      console.log(
-        "ℹ No instant slot — selecting date and time slot based on preferences",
-      );
-      const dateSelected = await this.selectFirstEnabledDate(prefs);
-      if (!dateSelected) {
-        const errorMsg = `Date ${prefs.preferredDate || "available"} not found`;
-        console.log(`⚠ ${errorMsg} after ${prefs.maxDateAttempts} attempts`);
-        throw new Error(errorMsg);
-      }
+      if (prefs.dateSelectionStrategy === "random") {
+        console.log(
+          "ℹ random date strategy — picking random month/week + random date + random slot",
+        );
+        const ok = await this.selectRandomDateAndSlot(prefs);
+        if (!ok) {
+          throw new Error("No available slots found via random strategy");
+        }
+      } else {
+        console.log(
+          "ℹ No instant slot — selecting date and time slot based on preferences",
+        );
+        const dateSelected = await this.selectFirstEnabledDate(prefs);
+        if (!dateSelected) {
+          const errorMsg = `Date ${prefs.preferredDate || "available"} not found`;
+          console.log(`⚠ ${errorMsg} after ${prefs.maxDateAttempts} attempts`);
+          throw new Error(errorMsg);
+        }
 
-      const slotSelected = await this.selectAvailableSlot(prefs);
-      if (!slotSelected) {
-        const errorMsg = prefs.preferredTime
-          ? `Time slot "${prefs.preferredTime}" is not available`
-          : "No available time slots found";
-        console.log(`⚠ ${errorMsg} for selected date`);
-        throw new Error(errorMsg);
+        const slotSelected = await this.selectAvailableSlot(prefs);
+        if (!slotSelected) {
+          const errorMsg = prefs.preferredTime
+            ? `Time slot "${prefs.preferredTime}" is not available`
+            : "No available time slots found";
+          console.log(`⚠ ${errorMsg} for selected date`);
+          throw new Error(errorMsg);
+        }
       }
     }
 

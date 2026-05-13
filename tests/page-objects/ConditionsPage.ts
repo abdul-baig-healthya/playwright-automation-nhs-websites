@@ -82,6 +82,32 @@ export class ConditionsPage {
   }
 
   /**
+   * Returns all adult-appropriate condition hrefs from the page, in shuffled order.
+   * Skips children's/paediatric conditions so the adult test user passes eligibility.
+   */
+  async getAllAdultConditionHrefs(): Promise<string[]> {
+    const links = this.getAllConditionLinks();
+    const count = await links.count();
+    const hrefs: string[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const href = await links.nth(i).getAttribute("href");
+      if (!href) continue;
+      const slug = href.toLowerCase();
+      const isChild = CHILD_CONDITION_PATTERNS.some((p) => slug.includes(p));
+      if (!isChild) hrefs.push(href);
+    }
+
+    // Fisher-Yates shuffle
+    for (let i = hrefs.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [hrefs[i], hrefs[j]] = [hrefs[j], hrefs[i]];
+    }
+
+    return hrefs;
+  }
+
+  /**
    * Returns the href of the condition matching the given name (case-insensitive).
    * Searches for conditions containing the name in the href or text.
    */

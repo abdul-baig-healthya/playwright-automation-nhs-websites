@@ -4,6 +4,15 @@ export interface FlowConfig {
   name: string;
   conditionJourneyType: "nhs" | "private";
   conditionName: string;
+  /** When set, bypasses the /conditions page lookup and navigates directly to this href. */
+  conditionHref?: string;
+  /**
+   * Overrides which questionnaire rule set the QuestionnairePage applies for
+   * this test. Must match a key understood by QuestionnairePage.answerByConditionRules
+   * (e.g. "shingles", "weight management", "erectile-dysfunction").
+   * Set as `OVERRIDE_ACTIVE_CONDITION` env var for the duration of this run.
+   */
+  questionnaireRulesKey?: string;
   booking: {
     appointmentType: "Video" | "Face to Face" | "Phone call";
     useNextAvailableSlot: boolean;
@@ -12,6 +21,10 @@ export interface FlowConfig {
     preferredTime?: string;
     autoMoveToNextDate: boolean;
     maxDateAttempts: number;
+    /** When true, throw if the requested appointmentType is unavailable/disabled. */
+    strictAppointmentType?: boolean;
+    /** When useNextAvailableSlot=false, controls how the date+slot is picked. */
+    dateSelectionStrategy?: "first" | "random";
   };
   paymentMethod: PaymentMethod;
 }

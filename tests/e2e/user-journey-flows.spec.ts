@@ -36,14 +36,15 @@ function buildFlowConfig(
 }
 
 /**
- * Returns true if the error indicates the condition title wasn't visible on
- * /conditions — meaning we should retry with a different condition. Other
- * failures (questionnaire, booking, payment, etc.) bubble up so the test fails
- * for the real reason.
+ * Returns true if the error means this condition should be skipped and another
+ * tried (condition not on /conditions page, self-care dead-end, etc.).
  */
 function isConditionNotFoundError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /not found on \/conditions/i.test(msg);
+  return (
+    /not found on \/conditions/i.test(msg) ||
+    /Flow reached a dead-end/i.test(msg)
+  );
 }
 
 test.describe("User Journey Flows", () => {
@@ -107,8 +108,9 @@ test.describe("User Journey Flows", () => {
           if (isConditionNotFoundError(err) && i < conditions.length - 1) {
             const msg = err instanceof Error ? err.message : String(err);
             attempts.push({ title: condition.title, error: msg });
+            const reason = /dead-end/i.test(msg) ? "dead-end (self-care/referral)" : "not on /conditions";
             console.log(
-              `↻ Condition "${condition.title}" not on /conditions — trying next condition`,
+              `↻ Condition "${condition.title}" skipped (${reason}) — trying next condition`,
             );
             // Reset state for the next attempt
             await page.context().clearCookies().catch(() => {});

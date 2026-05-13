@@ -634,6 +634,32 @@
         letter-spacing: .06em; flex-shrink: 0;
       }
 
+      /* ── Resize handles ──────────────────────────────────────────────────────── */
+      .rsz-h {
+        width: 5px; flex-shrink: 0; cursor: col-resize; z-index: 50;
+        background: transparent; position: relative;
+        transition: background 0.15s;
+      }
+      .rsz-h::after {
+        content: ""; position: absolute; inset: 0 1px;
+        background: var(--clr-border-drk); transition: background 0.15s;
+      }
+      .rsz-h:hover::after, .rsz-h.dragging::after { background: var(--clr-accent); }
+
+      .rsz-v {
+        height: 5px; flex-shrink: 0; cursor: row-resize; z-index: 50;
+        background: transparent; position: relative;
+      }
+      .rsz-v::after {
+        content: ""; position: absolute; inset: 1px 0;
+        background: var(--clr-border-drk); transition: background 0.15s;
+      }
+      .rsz-v:hover::after, .rsz-v.dragging::after { background: var(--clr-accent); }
+
+      body.rsz-dragging-h { cursor: col-resize !important; user-select: none; }
+      body.rsz-dragging-v { cursor: row-resize !important; user-select: none; }
+
+
       /* Responsive */
       @media (max-width: 680px) {
         :root { --sidebar-w: 240px; }
@@ -683,12 +709,17 @@
         <div id="tree">
           <div class="empty-state">Select a pharmacy to load tests</div>
         </div>
+        <!-- Resize: tree ↕ runs -->
+        <div class="rsz-v" id="rsz-tree-runs" style="display:none"></div>
         <!-- Active/completed runs queue -->
         <div id="runs-section">
           <div id="runs-hdr">Runs <span id="runs-badge">0</span></div>
           <div id="runs-list"></div>
         </div>
       </nav>
+
+      <!-- Resize: sidebar ↔ main -->
+      <div class="rsz-h" id="rsz-sidebar"></div>
 
       <!-- Main panel -->
       <main id="main">
@@ -717,6 +748,9 @@
             </div>
           </div>
         </div>
+
+        <!-- Resize: viewport ↕ output -->
+        <div class="rsz-v" id="rsz-viewport"></div>
 
         <!-- Tab bar -->
         <div id="tab-bar">
@@ -912,6 +946,9 @@
       lifestyle: "LIFESTYLE",
       eligibility: "ELIGIBILITY",
       user_journey: "USER JOURNEY",
+      booking: "BOOKING",
+      payment: "PAYMENT",
+      condition_rules: "CONDITION RULES",
     };
 
     const JOURNEY_SUITE_FILES = {
@@ -920,6 +957,9 @@
       lifestyle: "tests/e2e/condition-flow.spec.ts",
       eligibility: "tests/e2e/eligibility.spec.ts",
       user_journey: "tests/e2e/user-journey-flows.spec.ts",
+      booking: "tests/e2e/booking-flows.spec.ts",
+      payment: "tests/e2e/payment-flows.spec.ts",
+      condition_rules: "tests/e2e/condition-rules-flows.spec.ts",
     };
 
     function getJourneyFromTest(testItem) {
@@ -927,6 +967,9 @@
       const title = `${testItem.fullTitle || ""} ${testItem.title || ""}`.toLowerCase();
       if (file.includes("eligibility.spec")) return "eligibility";
       if (file.includes("user-journey-flows.spec")) return "user_journey";
+      if (file.includes("booking-flows.spec")) return "booking";
+      if (file.includes("payment-flows.spec")) return "payment";
+      if (file.includes("condition-rules-flows.spec")) return "condition_rules";
       if (file.includes("nhs-flows.spec")) return "nhs";
       if (file.includes("private-flows.spec")) return "private";
       if (file.includes("condition-flow.spec")) return "lifestyle";
@@ -1127,8 +1170,8 @@
       treeEl.innerHTML = "";
       visibleTestCases = [];
 
-      const journeyOrder = ["nhs", "private", "lifestyle", "eligibility", "user_journey"];
-      const journeyEmojis = { nhs: "🏥", private: "💊", lifestyle: "🌱", eligibility: "✅", user_journey: "🧭" };
+      const journeyOrder = ["nhs", "private", "lifestyle", "eligibility", "user_journey", "condition_rules", "booking", "payment"];
+      const journeyEmojis = { nhs: "🏥", private: "💊", lifestyle: "🌱", eligibility: "✅", user_journey: "🧭", condition_rules: "📋", booking: "📅", payment: "💳" };
 
       // Assign global IDs to all tests
       const allCases = tests.map((t, idx) => ({
@@ -1236,6 +1279,7 @@
     // ── Runs section helpers ───────────────────────────────────────────────────
     function showRunsSection() {
       runsSec.style.display = "flex";
+      document.getElementById("rsz-tree-runs").style.display = "";
     }
 
     function updateRunsBadge() {
@@ -1724,6 +1768,86 @@
     // ── Init ───────────────────────────────────────────────────────────────────
     loadPharmacies();
     loadTestData();
+
+    // ── Resize handles ─────────────────────────────────────────────────────────
+    function makeHResize(handle, getTarget, getSize, setSize, minPx, maxPx) {
+      handle.addEventListener("mousedown", e => {
+        e.preventDefault();
+        handle.classList.add("dragging");
+        document.body.classList.add("rsz-dragging-h");
+        const startX = e.clientX;
+        const startSz = getSize();
+        const onMove = mv => {
+          const next = Math.min(maxPx, Math.max(minPx, startSz + (mv.clientX - startX)));
+          setSize(next);
+        };
+        const onUp = () => {
+          handle.classList.remove("dragging");
+          document.body.classList.remove("rsz-dragging-h");
+          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mouseup", onUp);
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+      });
+    }
+
+    function makeVResize(handle, getSize, setSize, minPx, maxPx, dir = 1) {
+      handle.addEventListener("mousedown", e => {
+        e.preventDefault();
+        handle.classList.add("dragging");
+        document.body.classList.add("rsz-dragging-v");
+        const startY = e.clientY;
+        const startSz = getSize();
+        const onMove = mv => {
+          const next = Math.min(maxPx, Math.max(minPx, startSz + dir * (mv.clientY - startY)));
+          setSize(next);
+        };
+        const onUp = () => {
+          handle.classList.remove("dragging");
+          document.body.classList.remove("rsz-dragging-v");
+          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mouseup", onUp);
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+      });
+    }
+
+    // 1. Horizontal: sidebar ↔ main
+    const sidebarEl = document.getElementById("sidebar");
+    makeHResize(
+      document.getElementById("rsz-sidebar"),
+      null,
+      () => sidebarEl.getBoundingClientRect().width,
+      w => { sidebarEl.style.width = w + "px"; sidebarEl.style.minWidth = w + "px"; },
+      180, 600
+    );
+
+    // 2. Vertical in sidebar: tree ↕ runs-section (dir=-1: drag up = grow, drag down = shrink)
+    const runsSectionEl = document.getElementById("runs-section");
+    makeVResize(
+      document.getElementById("rsz-tree-runs"),
+      () => {
+        const h = runsSectionEl.getBoundingClientRect().height;
+        return h > 0 ? h : 160;
+      },
+      h => {
+        runsSectionEl.style.maxHeight = h + "px";
+        runsSectionEl.style.minHeight = h + "px";
+        runsSectionEl.style.display = "flex";
+      },
+      60, 480, -1
+    );
+
+    // 3. Vertical in main: viewport ↕ output/tabs
+    const viewportEl = document.getElementById("viewport");
+    makeVResize(
+      document.getElementById("rsz-viewport"),
+      () => viewportEl.getBoundingClientRect().height,
+      h => { viewportEl.style.height = h + "px"; },
+      80, 600
+    );
     </script>
   </body>
 </html>

@@ -53,6 +53,13 @@ export const ACTIVE_CONDITION = {
 };
 
 export function getActiveConditionName(): string {
+  // Per-test override (set by run-flow.ts via FlowConfig.questionnaireRulesKey).
+  // Allows different flows in the same Playwright run to apply different rule sets
+  // without mutating the ACTIVE_CONDITION constant.
+  const override = process.env.OVERRIDE_ACTIVE_CONDITION;
+  if (override && override.trim().length > 0) {
+    return override.trim();
+  }
   return CONDITION_CATALOG[ACTIVE_CONDITION.journeyType];
 }
 
@@ -99,6 +106,22 @@ export interface BookingPreferences {
    * Max date navigation attempts
    */
   maxDateAttempts: number;
+
+  /**
+   * If true, throw "Appointment type X not available" when the preferred
+   * appointment type is missing or disabled (instead of silently falling back
+   * to the first available radio). Used by booking-flow scenario tests so they
+   * can retry with a different condition.
+   */
+  strictAppointmentType?: boolean;
+
+  /**
+   * Strategy when `useNextAvailableSlot` is false:
+   *   "first"   — pick the first enabled date, then the first available slot (default)
+   *   "random"  — randomly navigate forward 0–3 months/weeks then pick a random
+   *               visible enabled date and a random slot
+   */
+  dateSelectionStrategy?: "first" | "random";
 }
 
 export const BOOKING_PREFERENCES: BookingPreferences = {

@@ -855,7 +855,7 @@ export class QuestionnairePage {
     // make multiple input rules target the same field.
     return this.page
       .locator(
-        [".questions.required-question", ".questions", ".question-title"].join(
+        [".questions", ".question-title"].join(
           ", ",
         ),
       )

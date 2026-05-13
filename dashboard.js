@@ -197,8 +197,9 @@ function writeTestData(data) {
   // s(val, def): return val if non-empty, else def
   const s = (val, def) => (val != null && String(val).trim() !== "") ? String(val) : String(def ?? "");
 
+  // Use a function replacement to avoid treating $ in val as a special replacement pattern
   const setStr = (key, val) => {
-    src = src.replace(new RegExp(`(${key}:\\s*)"[^"]*"`), `$1"${val}"`);
+    src = src.replace(new RegExp(`(${key}:\\s*)"[^"]*"`), (_, prefix) => `${prefix}"${val}"`);
   };
   const setBool = (key, val) => {
     src = src.replace(
@@ -210,7 +211,7 @@ function writeTestData(data) {
     src = src.replace(new RegExp(`(${key}:\\s*)\\d+`), `$1${val}`);
   };
 
-  const u = data.user;
+  const u = data.user || {};
   setStr("gender",          s(u.gender,          defs.user.gender));
   setStr("firstName",       s(u.firstName,        defs.user.firstName));
   setStr("lastName",        s(u.lastName,         defs.user.lastName));
@@ -233,7 +234,7 @@ function writeTestData(data) {
   src = src.replace(/(iso:\s*)"[^"]*"/, `$1"${iso}"`);
   src = src.replace(/(display:\s*)"[^"]*"/, `$1"${display}"`);
 
-  const p = data.payment;
+  const p = data.payment || {};
   setStr("cardholderName", s(p.cardholderName, defs.payment?.cardholderName));
   setStr("cardNumber",     s(p.cardNumber,     defs.payment?.cardNumber));
   setStr("expiryDate",     s(p.expiryDate,     defs.payment?.expiryDate));
@@ -476,6 +477,8 @@ app.get("/api/run-tests", (req, res) => {
     try {
       const overrideData = JSON.parse(Buffer.from(tdOverridesB64, "base64").toString("utf8"));
       originalTDContent = fs.readFileSync(TEST_DATA_PATH, "utf8");
+      const firstName = overrideData.user?.firstName;
+      if (firstName) send("log", `📋 Test data override: firstName="${firstName}"`);
       writeTestData(overrideData);
     } catch (e) {
       send("log", `⚠ Could not apply test data overrides: ${e.message}`);

@@ -103,8 +103,14 @@ const FLOW_CONFIGS = [
 function readTestData() {
   const src = fs.readFileSync(TEST_DATA_PATH, "utf8");
 
+  // Direct literal: key: "value"
   const get = (key) => {
     const m = src.match(new RegExp(`${key}:\\s*"([^"]*)"`));
+    return m ? m[1] : "";
+  };
+  // Env-var pattern: TD_KEY || "fallback"  (handles both direct and cast forms)
+  const getEnv = (tdKey) => {
+    const m = src.match(new RegExp(`${tdKey}\\s*\\|\\|\\s*"([^"]*)"`));
     return m ? m[1] : "";
   };
   const getNum = (key) => {
@@ -116,9 +122,7 @@ function readTestData() {
     return m ? m[1] === "true" : false;
   };
 
-  // Active condition — find uncommented journeyType line
-  const activeMatch = src.match(/journeyType:\s*"(nhs|private|lifestyle)"\s+as\s+ConditionJourneyType,?\s*\n(?!\s*\/\/)/);
-  // Simpler: find the uncommented journeyType line inside ACTIVE_CONDITION block
+  // Active condition — find the uncommented journeyType line inside ACTIVE_CONDITION block
   const activeCondBlock = src.match(/ACTIVE_CONDITION\s*=\s*\{([^}]+)\}/s);
   let journeyType = "nhs";
   if (activeCondBlock) {
@@ -133,55 +137,55 @@ function readTestData() {
 
   return {
     user: {
-      gender: get("gender"),
-      firstName: get("firstName"),
-      lastName: get("lastName"),
-      postcode: get("postcode"),
-      email: get("email"),
-      phone: get("phone"),
-      guardianName: get("guardianName"),
-      dobDay: get("day"),
-      dobMonth: get("month"),
-      dobYear: get("year"),
-      password: get("password"),
-      confirmPassword: get("confirmPassword"),
+      gender:          getEnv("TD_GENDER"),
+      firstName:       getEnv("TD_FIRST_NAME"),
+      lastName:        getEnv("TD_LAST_NAME"),
+      postcode:        getEnv("TD_POSTCODE"),
+      email:           getEnv("TD_EMAIL"),
+      phone:           getEnv("TD_PHONE"),
+      guardianName:    getEnv("TD_GUARDIAN_NAME"),
+      dobDay:          getEnv("TD_DOB_DAY"),
+      dobMonth:        getEnv("TD_DOB_MONTH"),
+      dobYear:         getEnv("TD_DOB_YEAR"),
+      password:        getEnv("TD_PASSWORD"),
+      confirmPassword: getEnv("TD_CONFIRM_PASSWORD"),
     },
     payment: {
-      cardholderName: get("cardholderName"),
-      cardNumber: get("cardNumber"),
-      expiryDate: get("expiryDate"),
-      securityCode: get("securityCode"),
+      cardholderName: getEnv("TD_CARD_HOLDER"),
+      cardNumber:     getEnv("TD_CARD_NUMBER"),
+      expiryDate:     getEnv("TD_CARD_EXPIRY"),
+      securityCode:   getEnv("TD_CARD_CVV"),
     },
     condition: { journeyType },
     booking: {
-      appointmentType: get("appointmentType"),
+      appointmentType:    get("appointmentType"),
       useNextAvailableSlot: getBool("useNextAvailableSlot"),
-      preferredMonth: get("preferredMonth"),
-      preferredDate: get("preferredDate"),
-      preferredTime: get("preferredTime"),
+      preferredMonth:     get("preferredMonth"),
+      preferredDate:      get("preferredDate"),
+      preferredTime:      get("preferredTime"),
       autoMoveToNextDate: getBool("autoMoveToNextDate"),
-      maxDateAttempts: getNum("maxDateAttempts"),
+      maxDateAttempts:    getNum("maxDateAttempts"),
     },
     drug: {
       strength: get("strength"),
       packSize: get("packSize"),
     },
     cart: {
-      quantityAction: get("quantityAction"),
-      quantityClicks: getNum("quantityClicks"),
-      deleteProduct: getBool("deleteProduct"),
+      quantityAction:  get("quantityAction"),
+      quantityClicks:  getNum("quantityClicks"),
+      deleteProduct:   getBool("deleteProduct"),
       couponCode: (() => { const m = src.match(/couponCode:\s*"([^"]*)"/); return m ? m[1] : ""; })(),
       action: (() => { const m = src.match(/CART_PREFERENCES[\s\S]*?action:\s*"([^"]*)"/); return m ? m[1] : "Proceed To Checkout"; })(),
     },
     shipping: {
-      shippingMode: get("shippingMode"),
-      addressType: get("addressType"),
-      addressLine1: get("addressLine1"),
-      addressLine2: (() => { const m = src.match(/addressLine2:\s*"([^"]*)"/); return m ? m[1] : ""; })(),
-      townCity: get("townCity"),
-      postalCode: get("postalCode"),
-      addressAction: get("addressAction"),
-      paymentMethod: get("paymentMethod"),
+      shippingMode:   getEnv("TD_SHIP_MODE"),
+      addressType:    getEnv("TD_SHIP_ADDRESS_TYPE"),
+      addressLine1:   getEnv("TD_SHIP_ADDRESS1"),
+      addressLine2:   getEnv("TD_SHIP_ADDRESS2"),
+      townCity:       getEnv("TD_SHIP_CITY"),
+      postalCode:     getEnv("TD_SHIP_POSTCODE"),
+      addressAction:  getEnv("TD_SHIP_ADDRESS_ACTION"),
+      paymentMethod:  getEnv("TD_PAYMENT_METHOD"),
     },
     thankYou: {
       action: (() => { const m = src.match(/THANK_YOU_PREFERENCES[\s\S]*?action:\s*"([^"]*)"/); return m ? m[1] : "My Orders"; })(),
@@ -395,7 +399,13 @@ app.get("/api/run-tests", (req, res) => {
       set("TD_SHIP_POSTCODE",       sh.postalCode);
       set("TD_SHIP_ADDRESS_ACTION", sh.addressAction);
       set("TD_PAYMENT_METHOD",      sh.paymentMethod);
-      if (u.firstName) send("log", `📋 Test data override: firstName="${u.firstName}"`);
+      const overrideCount = Object.keys(tdEnv).length;
+      if (overrideCount > 0) {
+        const summary = Object.entries(tdEnv)
+          .map(([k, v]) => `${k.replace("TD_", "")}="${v}"`)
+          .join(", ");
+        send("log", `📋 Test data overrides (${overrideCount}): ${summary}`);
+      }
     } catch (err) {
       send("log", `⚠ Could not parse test data overrides: ${err.message}`);
     }

@@ -621,6 +621,17 @@
         background: var(--clr-surface-2); color: var(--clr-txt-muted);
         font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
       }
+      .jg-run-btn {
+        display: flex; align-items: center; gap: 4px;
+        font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+        padding: 3px 9px; border-radius: 5px; border: none; cursor: pointer;
+        background: var(--clr-accent); color: #fff;
+        opacity: 0; pointer-events: none;
+        transition: opacity var(--transition), background var(--transition);
+        white-space: nowrap;
+      }
+      .journey-group-hdr:hover .jg-run-btn { opacity: 1; pointer-events: auto; }
+      .jg-run-btn:hover { background: var(--clr-accent-hover, #2563eb); }
       .journey-group-body { display: none; }
       .journey-group.open .journey-group-body { display: block; }
 
@@ -1298,7 +1309,22 @@
           <span class="jg-icon">${journeyEmojis[journey]}</span>
           <span class="jg-label">${JOURNEY_LABELS[journey] || journey}</span>
           <span class="jg-count">${cases.length}</span>
+          <button class="jg-run-btn" title="Run all ${JOURNEY_LABELS[journey] || journey} tests">▶ Run all</button>
         `;
+        hdr.querySelector(".jg-run-btn").addEventListener("click", e => {
+          e.stopPropagation(); // don't toggle collapse
+          const tdOverrides = btoa(JSON.stringify(tdCollectForm()));
+          for (const tc of cases) {
+            queueRun({
+              file: tc.runnable.file,
+              line: tc.runnable.line,
+              grep: tc.runnable.fullTitle,
+              label: `${tc.id} ${tc.title}`,
+              journey: tc.journey,
+              _tdOverrides: tdOverrides,
+            });
+          }
+        });
         hdr.addEventListener("click", () => group.classList.toggle("open"));
 
         const body = document.createElement("div");

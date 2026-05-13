@@ -600,29 +600,29 @@
       ::-webkit-scrollbar-thumb { background: var(--clr-border-drk); border-radius: 3px; }
       ::-webkit-scrollbar-thumb:hover { background: var(--clr-accent); }
 
-      /* ── Journey filter tabs ──────────────────────────────────────────────────── */
-      #journey-tabs {
-        display: flex; background: var(--clr-sidebar-alt);
-        border-bottom: 1px solid var(--clr-border);
-        padding: 8px 12px; gap: 8px; flex-shrink: 0;
-        transition: background var(--transition), border-color var(--transition);
+      /* ── Journey collapsible groups ───────────────────────────────────────────── */
+      .journey-group { border-bottom: 1px solid var(--clr-border); }
+      .journey-group-hdr {
+        display: flex; align-items: center; gap: 8px;
+        padding: 9px 14px; cursor: pointer; user-select: none;
+        font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+        color: var(--clr-txt-muted); background: var(--clr-sidebar-alt);
+        transition: background var(--transition), color var(--transition);
       }
-      .journey-tab {
-        flex: 1; height: 30px; border: 1px solid var(--clr-border-drk);
-        border-radius: var(--radius-sm); background: var(--clr-surface);
-        font-size: 11px; font-weight: 600; text-transform: uppercase;
-        cursor: pointer; display: flex; align-items: center; justify-content: center;
-        transition: all var(--transition); color: var(--clr-txt-muted);
-        font-family: inherit;
+      .journey-group-hdr:hover { background: var(--clr-hover); color: var(--clr-txt); }
+      .jg-arrow {
+        display: inline-block; font-size: 8px; color: var(--clr-txt-dim);
+        transition: transform var(--transition);
       }
-      .journey-tab.active {
-        background: linear-gradient(135deg, var(--clr-accent), var(--clr-accent-2));
-        border-color: transparent; color: #fff;
-        box-shadow: 0 2px 10px rgba(124,106,247,0.35);
+      .journey-group.open .jg-arrow { transform: rotate(90deg); }
+      .jg-icon { font-size: 13px; }
+      .jg-label { flex: 1; }
+      .jg-count {
+        background: var(--clr-surface-2); color: var(--clr-txt-muted);
+        font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
       }
-      .journey-tab:hover:not(.active) {
-        background: var(--clr-hover); border-color: var(--clr-accent); color: var(--clr-txt);
-      }
+      .journey-group-body { display: none; }
+      .journey-group.open .journey-group-body { display: block; }
 
       /* ── Tree header label ────────────────────────────────────────────────────── */
       #tree-hdr {
@@ -673,11 +673,6 @@
 
       <!-- Sidebar: test tree -->
       <nav id="sidebar">
-        <div id="journey-tabs" aria-label="Journey type">
-          <button class="journey-tab" type="button" data-journey="nhs">NHS</button>
-          <button class="journey-tab" type="button" data-journey="private">Private</button>
-          <button class="journey-tab active" type="button" data-journey="lifestyle">Lifestyle</button>
-        </div>
         <div id="search-wrap">
           <input id="search" type="search" placeholder="Search test cases..." autocomplete="off" />
         </div>
@@ -948,8 +943,9 @@
         // ── State ──────────────────────────────────────────────────────────────────
     let allTests        = [];
     let currentPharmacy = null;
-    let filterText      = "";
-    let activeJourneyFilter = "lifestyle";
+    let filterText        = "";
+    let activeJourneyFilter = "lifestyle"; // tracks TD panel journey type select
+    let visibleTestCases  = []; // set by renderTree() — used by Run All
 
     // Multi-run state
     const runs   = new Map(); // runId → { label, status, logs[], artifacts, startTime, es, elapsedTimer, videoUrls[] }
@@ -971,7 +967,6 @@
     const cntSkip       = document.getElementById("cnt-skip");
     const treeEl        = document.getElementById("tree");
     const searchEl      = document.getElementById("search");
-    const journeyBtns   = document.querySelectorAll(".journey-tab");
     const logEl         = document.getElementById("log");
     const videoEl       = document.getElementById("video-player");
     const vpHolder      = document.getElementById("viewport-placeholder");
@@ -1042,25 +1037,23 @@
 
     function syncJourneyFilter(value) {
       activeJourneyFilter = value;
-      journeyBtns.forEach(btn => {
-        btn.classList.toggle("active", btn.dataset.journey === value);
-      });
     }
 
     function updateRunAllBtn() {
-      btnRunAll.disabled = (allTests.length === 0 || !currentPharmacy);
+      btnRunAll.disabled = (visibleTestCases.length === 0 || !currentPharmacy);
     }
 
     function tdFillForm(data) {
       tdData = data;
       const u = data.user || {}, b = data.booking || {}, d = data.drug || {};
       const c = data.cart || {}, s = data.shipping || {}, ty = data.thankYou || {};
-      const p = u.payment || {};
+      const p = data.payment || {};
       const journeyType = data.condition?.journeyType || data.condition || "";
 
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ""; };
       const check = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
 
+      console.log("Filling test data form with:", data);
       set("td-firstName",       u.firstName);
       set("td-lastName",        u.lastName);
       set("td-email",           u.email);
@@ -1183,15 +1176,6 @@
         }
       });
     });
-    journeyBtns.forEach(btn => {
-      btn.addEventListener("click", () => {
-        const journeyType = btn.dataset.journey;
-        const select = document.getElementById("td-journeyType");
-        if (select) select.value = journeyType;
-        syncJourneyFilter(journeyType);
-        renderTree(allTests);
-      });
-    });
     document.querySelectorAll(".td-section-header").forEach(hdr => {
       hdr.addEventListener("click", () => hdr.closest(".td-section").classList.toggle("collapsed"));
     });
@@ -1275,32 +1259,60 @@
     // ── Dynamic functional test cases (derived from discovered tests) ─────────
     function renderTree(tests) {
       const query = filterText.toLowerCase();
-      const scoped = tests
-        .filter(t => getJourneyFromTest(t) === activeJourneyFilter)
-        .map((t, idx) => ({
-          id: toCaseId(idx),
-          title: t.title || t.fullTitle || "Unnamed Test",
-          category: deriveCategory(t.fullTitle, t.file),
-          journey: getJourneyFromTest(t),
-          runnable: t,
-        }));
+      treeEl.innerHTML = "";
+      visibleTestCases = [];
 
-      const visible = scoped.filter(testCase => {
-        const matchesSearch = !query
-          || testCase.id.toLowerCase().includes(query)
-          || testCase.title.toLowerCase().includes(query)
-          || testCase.category.toLowerCase().includes(query);
-        return matchesSearch;
+      const journeyOrder = ["nhs", "private", "lifestyle"];
+      const journeyEmojis = { nhs: "🏥", private: "💊", lifestyle: "🌱" };
+
+      // Assign global IDs to all tests
+      const allCases = tests.map((t, idx) => ({
+        id: toCaseId(idx),
+        title: t.title || t.fullTitle || "Unnamed Test",
+        category: deriveCategory(t.fullTitle, t.file),
+        journey: getJourneyFromTest(t),
+        runnable: t,
+      }));
+
+      let anyVisible = false;
+
+      journeyOrder.forEach(journey => {
+        const cases = allCases.filter(tc => {
+          if (tc.journey !== journey) return false;
+          if (!query) return true;
+          return tc.id.toLowerCase().includes(query)
+            || tc.title.toLowerCase().includes(query)
+            || tc.category.toLowerCase().includes(query);
+        });
+        if (cases.length === 0) return;
+        anyVisible = true;
+        visibleTestCases.push(...cases);
+
+        const group = document.createElement("div");
+        group.className = "journey-group open";
+
+        const hdr = document.createElement("div");
+        hdr.className = "journey-group-hdr";
+        hdr.innerHTML = `
+          <span class="jg-arrow">▶</span>
+          <span class="jg-icon">${journeyEmojis[journey]}</span>
+          <span class="jg-label">${JOURNEY_LABELS[journey] || journey}</span>
+          <span class="jg-count">${cases.length}</span>
+        `;
+        hdr.addEventListener("click", () => group.classList.toggle("open"));
+
+        const body = document.createElement("div");
+        body.className = "journey-group-body";
+        cases.forEach(tc => body.appendChild(functionalCaseNode(tc)));
+
+        group.appendChild(hdr);
+        group.appendChild(body);
+        treeEl.appendChild(group);
       });
 
-      if (visible.length === 0) {
-        const label = activeJourneyFilter.charAt(0).toUpperCase() + activeJourneyFilter.slice(1);
-        treeEl.innerHTML = `<div class="empty-state">No ${label} tests match your filter</div>`;
-        return;
+      if (!anyVisible) {
+        treeEl.innerHTML = '<div class="empty-state">No tests match your filter</div>';
       }
-
-      treeEl.innerHTML = "";
-      visible.forEach(testCase => treeEl.appendChild(functionalCaseNode(testCase)));
     }
 
     function functionalCaseNode(testCase) {
@@ -1338,7 +1350,7 @@
       return div;
     }
 
-    searchEl.addEventListener("input", () => { filterText = searchEl.value; renderTree(allTests); });
+    searchEl.addEventListener("input", () => { filterText = searchEl.value; renderTree(allTests); updateRunAllBtn(); });
 
     // ── Runs section helpers ───────────────────────────────────────────────────
     function showRunsSection() {
@@ -1563,7 +1575,7 @@
       pharmacySel.title = busy ? "Cannot change pharmacy while tests are running or queued" : "Select pharmacy";
     }
 
-    async function queueRun({ file, line, grep, label, journey } = {}) {
+    async function queueRun({ file, line, grep, label, journey, _tdOverrides } = {}) {
       if (!currentPharmacy) { alert("Select a pharmacy first."); return; }
 
       const runJourney = journey || activeJourneyFilter;
@@ -1576,8 +1588,8 @@
       const key = grep ? `test:${grep}` : file ? `file:${file}` : null;
       if (key && queuedKeys.has(key)) return;
 
-      // Auto-save test data before running (empty fields fall back to defaults server-side)
-      await tdAutoSave();
+      // Collect test data overrides (browser-only — applied temporarily on server during the run)
+      const tdOverrides = _tdOverrides !== undefined ? _tdOverrides : btoa(JSON.stringify(tdCollectForm()));
 
       const runId    = `run-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const runLabel = label || (file ? file.split("/").pop() : "All tests");
@@ -1594,7 +1606,7 @@
         queueKey: key, journey: runJourney
       });
 
-      runQueue.push({ runId, file, line, grep, label: runLabel, key, journey: runJourney });
+      runQueue.push({ runId, file, line, grep, label: runLabel, key, journey: runJourney, tdOverrides });
       addRunCard(runId);
       selectRun(runId);
       updateQueuePositions();
@@ -1610,7 +1622,7 @@
       const job = runQueue.shift();
       updateQueuePositions();
 
-      const { runId, file, line, grep, label, key, journey } = job;
+      const { runId, file, line, grep, label, key, journey, tdOverrides } = job;
       transitionCardToRunning(runId);
       clearLog();
       hideCounts();
@@ -1623,6 +1635,7 @@
       if (grep)  params.set("grep", grep);
       if (label) params.set("label", label);
       if (journey) params.set("journey", journey);
+      if (tdOverrides) params.set("td", tdOverrides);
 
       const es = new EventSource(`/api/run-tests?${params}`);
       const run = runs.get(runId);
@@ -1746,7 +1759,23 @@
       updatePharmacyLock();
     }
 
-    btnRunAll.addEventListener("click", () => queueRun());
+    btnRunAll.addEventListener("click", async () => {
+      if (!currentPharmacy) { alert("Select a pharmacy first."); return; }
+      const cases = visibleTestCases.filter(tc => tc.runnable);
+      if (cases.length === 0) { alert("No tests visible to run."); return; }
+      // Capture overrides once so all tests in this batch use the same snapshot
+      const tdOverrides = btoa(JSON.stringify(tdCollectForm()));
+      for (const tc of cases) {
+        await queueRun({
+          file: tc.runnable.file,
+          line: tc.runnable.line,
+          grep: tc.runnable.fullTitle,
+          label: `${tc.id} ${tc.title}`,
+          journey: tc.journey,
+          _tdOverrides: tdOverrides,
+        });
+      }
+    });
     btnStop.addEventListener("click", async () => {
       // Clear pending queue first
       const pendingIds = runQueue.map(j => j.runId);

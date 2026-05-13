@@ -461,6 +461,7 @@ app.get("/api/run-tests", (req, res) => {
   const file = req.query.file;
   const line = req.query.line;
   const label = req.query.label;
+  const tdOverridesB64 = req.query.td; // base64 JSON test data overrides from browser
   const parts = [];
   if (project) parts.push(project);
   parts.push(label || (file ? `${file}${line ? ":" + line : ""}` : "all tests"));
@@ -468,6 +469,18 @@ app.get("/api/run-tests", (req, res) => {
 
   const runStartTime = Date.now();
   lastRunStartTime = runStartTime;
+
+  // Apply test data overrides for this run only (restore originals after playwright exits)
+  let originalTDContent = null;
+  if (tdOverridesB64) {
+    try {
+      const overrideData = JSON.parse(Buffer.from(tdOverridesB64, "base64").toString("utf8"));
+      originalTDContent = fs.readFileSync(TEST_DATA_PATH, "utf8");
+      writeTestData(overrideData);
+    } catch (e) {
+      send("log", `⚠ Could not apply test data overrides: ${e.message}`);
+    }
+  }
 
   const runOutputDir = path.join(__dirname, "test-results", `run-${runId}`);
   const args = ["playwright", "test", "--reporter=list", `--output=${runOutputDir}`];
@@ -533,6 +546,11 @@ app.get("/api/run-tests", (req, res) => {
     // Force-drain stdio — browser subprocesses can hold pipes open even after playwright exits
     try { proc.stdout.destroy(); } catch (_) {}
     try { proc.stderr.destroy(); } catch (_) {}
+    // Restore test-data.ts if we temporarily modified it
+    if (originalTDContent) {
+      try { fs.writeFileSync(TEST_DATA_PATH, originalTDContent, "utf8"); } catch (_) {}
+      originalTDContent = null;
+    }
     // Delay scan to allow Playwright to finish flushing .webm video files to disk
     setTimeout(() => {
       const passed = (stdout.match(/\d+ passed/)?.[0] || "").trim();
@@ -548,6 +566,11 @@ app.get("/api/run-tests", (req, res) => {
     // Client disconnected — only kill if not already finished
     if (!finished) {
       activeProcs.delete(runId);
+      // Restore test-data.ts if we modified it
+      if (originalTDContent) {
+        try { fs.writeFileSync(TEST_DATA_PATH, originalTDContent, "utf8"); } catch (_) {}
+        originalTDContent = null;
+      }
       try { process.kill(-proc.pid, "SIGKILL"); } catch (_) { try { proc.kill(); } catch (_2) {} }
     }
     clearInterval(heartbeat);

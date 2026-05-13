@@ -1152,11 +1152,11 @@
 
         const hdr = document.createElement("div");
         hdr.className = "journey-group-hdr";
+        // <span class="jg-count">${cases.length}</span>
         hdr.innerHTML = `
           <span class="jg-arrow">▶</span>
           <span class="jg-icon">${journeyEmojis[journey]}</span>
           <span class="jg-label">${JOURNEY_LABELS[journey] || journey}</span>
-          <span class="jg-count">${cases.length}</span>
           <button class="jg-run-btn" title="Run all ${JOURNEY_LABELS[journey] || journey} tests">▶ Run all</button>
         `;
         hdr.querySelector(".jg-run-btn").addEventListener("click", e => {

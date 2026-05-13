@@ -189,112 +189,6 @@ function readTestData() {
   };
 }
 
-function writeTestData(data) {
-  let src = fs.readFileSync(TEST_DATA_PATH, "utf8");
-
-  // Load current file values so empty incoming fields fall back to defaults
-  const defs = readTestData();
-  // s(val, def): return val if non-empty, else def
-  const s = (val, def) => (val != null && String(val).trim() !== "") ? String(val) : String(def ?? "");
-
-  // Use a function replacement to avoid treating $ in val as a special replacement pattern
-  const setStr = (key, val) => {
-    src = src.replace(new RegExp(`(${key}:\\s*)"[^"]*"`), (_, prefix) => `${prefix}"${val}"`);
-  };
-  const setBool = (key, val) => {
-    src = src.replace(
-      new RegExp(`(${key}:\\s*)(true|false)`),
-      `$1${val ? "true" : "false"}`
-    );
-  };
-  const setNum = (key, val) => {
-    src = src.replace(new RegExp(`(${key}:\\s*)\\d+`), `$1${val}`);
-  };
-
-  const u = data.user || {};
-  setStr("gender",          s(u.gender,          defs.user.gender));
-  setStr("firstName",       s(u.firstName,        defs.user.firstName));
-  setStr("lastName",        s(u.lastName,         defs.user.lastName));
-  setStr("postcode",        s(u.postcode,         defs.user.postcode));
-  setStr("email",           s(u.email,            defs.user.email));
-  setStr("phone",           s(u.phone,            defs.user.phone));
-  setStr("guardianName",    s(u.guardianName,     defs.user.guardianName));
-  setStr("password",        s(u.password,         defs.user.password));
-  setStr("confirmPassword", s(u.confirmPassword,  defs.user.confirmPassword));
-  // DOB — fall back to defaults if any part is empty
-  const dobDay   = s(u.dobDay,   defs.user.dobDay);
-  const dobMonth = s(u.dobMonth, defs.user.dobMonth);
-  const dobYear  = s(u.dobYear,  defs.user.dobYear);
-  src = src.replace(/(day:\s*)"[^"]*"/, `$1"${dobDay}"`);
-  src = src.replace(/(month:\s*)"[^"]*"/, `$1"${dobMonth}"`);
-  src = src.replace(/(year:\s*)"[^"]*"/, `$1"${dobYear}"`);
-  // ISO and display derived
-  const iso = `${dobYear}-${dobMonth.padStart(2, "0")}-${dobDay.padStart(2, "0")}`;
-  const display = `${dobDay.padStart(2, "0")}/${dobMonth.padStart(2, "0")}/${dobYear}`;
-  src = src.replace(/(iso:\s*)"[^"]*"/, `$1"${iso}"`);
-  src = src.replace(/(display:\s*)"[^"]*"/, `$1"${display}"`);
-
-  const p = data.payment || {};
-  setStr("cardholderName", s(p.cardholderName, defs.payment?.cardholderName));
-  setStr("cardNumber",     s(p.cardNumber,     defs.payment?.cardNumber));
-  setStr("expiryDate",     s(p.expiryDate,     defs.payment?.expiryDate));
-  setStr("securityCode",   s(p.securityCode,   defs.payment?.securityCode));
-
-  const b = data.booking || {};
-  setStr("appointmentType", s(b.appointmentType, defs.booking.appointmentType));
-  setBool("useNextAvailableSlot", b.useNextAvailableSlot ?? defs.booking.useNextAvailableSlot);
-  setStr("preferredMonth", s(b.preferredMonth, defs.booking.preferredMonth));
-  setStr("preferredDate",  s(b.preferredDate,  defs.booking.preferredDate));
-  setStr("preferredTime",  s(b.preferredTime,  defs.booking.preferredTime));
-  setBool("autoMoveToNextDate", b.autoMoveToNextDate ?? defs.booking.autoMoveToNextDate);
-  setNum("maxDateAttempts", b.maxDateAttempts ?? defs.booking.maxDateAttempts);
-
-  const d = data.drug || {};
-  setStr("strength", s(d.strength, defs.drug?.strength));
-  setStr("packSize",  s(d.packSize,  defs.drug?.packSize));
-
-  const c = data.cart || {};
-  setStr("quantityAction", s(c.quantityAction, defs.cart?.quantityAction) || "none");
-  setNum("quantityClicks", c.quantityClicks ?? defs.cart?.quantityClicks ?? 0);
-  setBool("deleteProduct", c.deleteProduct ?? defs.cart?.deleteProduct ?? false);
-  setStr("couponCode", s(c.couponCode, defs.cart?.couponCode));
-  src = src.replace(/(CART_PREFERENCES[\s\S]*?action:\s*)"[^"]*"/, `$1"${s(c.action, defs.cart?.action) || "Proceed To Checkout"}"`);
-
-  const sh = data.shipping || {};
-  setStr("shippingMode",   s(sh.shippingMode,   defs.shipping?.shippingMode)   || "delivery");
-  setStr("addressType",    s(sh.addressType,    defs.shipping?.addressType)    || "Home");
-  setStr("addressLine1",   s(sh.addressLine1,   defs.shipping?.addressLine1));
-  src = src.replace(/(SHIPPING_ADDRESS_PREFERENCES[\s\S]*?addressLine2:\s*)"[^"]*"/, `$1"${s(sh.addressLine2, defs.shipping?.addressLine2)}"`);
-  setStr("townCity",       s(sh.townCity,       defs.shipping?.townCity));
-  setStr("postalCode",     s(sh.postalCode,     defs.shipping?.postalCode));
-  setStr("addressAction",  s(sh.addressAction,  defs.shipping?.addressAction)  || "save");
-  setStr("paymentMethod",  s(sh.paymentMethod,  defs.shipping?.paymentMethod)  || "Cash on delivery");
-
-  const ty = data.thankYou || {};
-  src = src.replace(/(THANK_YOU_PREFERENCES[\s\S]*?action:\s*)"[^"]*"/, `$1"${s(ty.action, defs.thankYou?.action) || "My Orders"}"`);
-
-  // Active condition — comment out all, uncomment chosen
-  const jt = s(data.condition?.journeyType, defs.condition?.journeyType) || "nhs";
-  src = src.replace(
-    /(ACTIVE_CONDITION\s*=\s*\{[^}]*\})/s,
-    (block) => {
-      return block
-        .replace(/^\s*\/\/\s*(journeyType:\s*"(?:nhs|private|lifestyle)"[^,\n]*),?\s*$/gm, (line) => {
-          const m = line.match(/"(nhs|private|lifestyle)"/);
-          if (m && m[1] === jt) return line.replace(/^(\s*)\/\/\s*/, "$1");
-          return line;
-        })
-        .replace(/^(\s*)(journeyType:\s*"(?:nhs|private|lifestyle)"[^,\n]*),?(\s*)$/gm, (line, indent, content, trail) => {
-          const m = line.match(/"(nhs|private|lifestyle)"/);
-          if (m && m[1] !== jt) return `${indent}// ${content},${trail}`;
-          return line;
-        });
-    }
-  );
-
-  fs.writeFileSync(TEST_DATA_PATH, src, "utf8");
-}
-
 // ── Playwright UI process ─────────────────────────────────────────────────────
 
 const UI_PORT = 8081;
@@ -404,13 +298,10 @@ app.get("/api/test-data", (req, res) => {
   }
 });
 
-app.post("/api/test-data", (req, res) => {
-  try {
-    writeTestData(req.body);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+app.post("/api/test-data", (_req, res) => {
+  // Test data overrides are now browser-side only (passed as env vars at run time).
+  // This endpoint is kept for compatibility but does nothing.
+  res.json({ ok: true });
 });
 
 app.get("/api/flow-configs", (_req, res) => {
@@ -471,17 +362,42 @@ app.get("/api/run-tests", (req, res) => {
   const runStartTime = Date.now();
   lastRunStartTime = runStartTime;
 
-  // Apply test data overrides for this run only (restore originals after playwright exits)
-  let originalTDContent = null;
+  // Build TD_* env vars from browser-side overrides — no file modification needed
+  const tdEnv = {};
   if (tdOverridesB64) {
     try {
-      const overrideData = JSON.parse(Buffer.from(tdOverridesB64, "base64").toString("utf8"));
-      originalTDContent = fs.readFileSync(TEST_DATA_PATH, "utf8");
-      const firstName = overrideData.user?.firstName;
-      if (firstName) send("log", `📋 Test data override: firstName="${firstName}"`);
-      writeTestData(overrideData);
-    } catch (e) {
-      send("log", `⚠ Could not apply test data overrides: ${e.message}`);
+      const td = JSON.parse(Buffer.from(tdOverridesB64, "base64").toString("utf8"));
+      const u  = td.user     || {};
+      const p  = td.payment  || {};
+      const sh = td.shipping || {};
+      const set = (key, val) => { if (val != null && String(val).trim() !== "") tdEnv[key] = String(val); };
+      set("TD_FIRST_NAME",          u.firstName);
+      set("TD_LAST_NAME",           u.lastName);
+      set("TD_GENDER",              u.gender);
+      set("TD_EMAIL",               u.email);
+      set("TD_PHONE",               u.phone);
+      set("TD_POSTCODE",            u.postcode);
+      set("TD_GUARDIAN_NAME",       u.guardianName);
+      set("TD_PASSWORD",            u.password);
+      set("TD_CONFIRM_PASSWORD",    u.confirmPassword);
+      set("TD_DOB_DAY",             u.dobDay);
+      set("TD_DOB_MONTH",           u.dobMonth);
+      set("TD_DOB_YEAR",            u.dobYear);
+      set("TD_CARD_HOLDER",         p.cardholderName);
+      set("TD_CARD_NUMBER",         p.cardNumber);
+      set("TD_CARD_EXPIRY",         p.expiryDate);
+      set("TD_CARD_CVV",            p.securityCode);
+      set("TD_SHIP_MODE",           sh.shippingMode);
+      set("TD_SHIP_ADDRESS_TYPE",   sh.addressType);
+      set("TD_SHIP_ADDRESS1",       sh.addressLine1);
+      set("TD_SHIP_ADDRESS2",       sh.addressLine2);
+      set("TD_SHIP_CITY",           sh.townCity);
+      set("TD_SHIP_POSTCODE",       sh.postalCode);
+      set("TD_SHIP_ADDRESS_ACTION", sh.addressAction);
+      set("TD_PAYMENT_METHOD",      sh.paymentMethod);
+      if (u.firstName) send("log", `📋 Test data override: firstName="${u.firstName}"`);
+    } catch (err) {
+      send("log", `⚠ Could not parse test data overrides: ${err.message}`);
     }
   }
 
@@ -498,7 +414,7 @@ app.get("/api/run-tests", (req, res) => {
 
   const proc = spawn("npx", args, {
     cwd: __dirname,
-    env: { ...process.env },
+    env: { ...process.env, ...tdEnv },
     detached: true, // allows killing the whole process group
   });
   activeProcs.set(runId, { proc, startTime: runStartTime });
@@ -549,11 +465,6 @@ app.get("/api/run-tests", (req, res) => {
     // Force-drain stdio — browser subprocesses can hold pipes open even after playwright exits
     try { proc.stdout.destroy(); } catch (_) {}
     try { proc.stderr.destroy(); } catch (_) {}
-    // Restore test-data.ts if we temporarily modified it
-    if (originalTDContent) {
-      try { fs.writeFileSync(TEST_DATA_PATH, originalTDContent, "utf8"); } catch (_) {}
-      originalTDContent = null;
-    }
     // Delay scan to allow Playwright to finish flushing .webm video files to disk
     setTimeout(() => {
       const passed = (stdout.match(/\d+ passed/)?.[0] || "").trim();
@@ -569,11 +480,6 @@ app.get("/api/run-tests", (req, res) => {
     // Client disconnected — only kill if not already finished
     if (!finished) {
       activeProcs.delete(runId);
-      // Restore test-data.ts if we modified it
-      if (originalTDContent) {
-        try { fs.writeFileSync(TEST_DATA_PATH, originalTDContent, "utf8"); } catch (_) {}
-        originalTDContent = null;
-      }
       try { process.kill(-proc.pid, "SIGKILL"); } catch (_) { try { proc.kill(); } catch (_2) {} }
     }
     clearInterval(heartbeat);
@@ -608,10 +514,7 @@ app.post("/api/stop-test", (req, res) => {
   res.json({ stopped: count > 0, count });
 });
 
-app.post("/api/launch-ui", (req, res) => {
-  try {
-    writeTestData(req.body);
-  } catch (_) {}
+app.post("/api/launch-ui", (_req, res) => {
   res.json({ ...launchUI(), port: UI_PORT });
 });
 

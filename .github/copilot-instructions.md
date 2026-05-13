@@ -171,3 +171,11 @@ The `start-codespaces.sh` script:
 4. Starts `node dashboard.js`
 
 For headed tests inside Codespaces, ensure `DISPLAY=:99` is exported in the environment.
+
+<claude-mem-context>
+# claude-mem: Cross-Session Memory
+
+*No context yet. Complete your first session and context will appear here.*
+
+Use claude-mem's MCP search tools for manual memory queries.
+</claude-mem-context>

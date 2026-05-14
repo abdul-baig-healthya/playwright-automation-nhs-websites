@@ -17,6 +17,9 @@
       "visibility": "public"
     }
   },
+  "otherPortsAttributes": {
+    "onAutoForward": "notify"
+  },
   "postCreateCommand": "npm install && npx playwright install --with-deps chromium && npm install -g pm2",
   "postStartCommand": "pm2 start ecosystem.config.js --no-autorestart || pm2 restart ecosystem.config.js ; pm2 save",
   "customizations": {

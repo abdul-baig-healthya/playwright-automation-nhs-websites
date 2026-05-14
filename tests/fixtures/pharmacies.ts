@@ -29,17 +29,17 @@ export const PHARMACY_SITES: PharmacySite[] = [
   {
     name: "Pharmaease",
     baseURL: "https://pharmaease.healthya.co.uk/",
-    sanityProjectId: "sorypy1x",
+    sanityProjectId: "2lyvy3je",
   },
   {
     name: "Paydens",
     baseURL: "https://paydens-pharmacy.healthya.co.uk/",
-    sanityProjectId: "sorypy2x",
+    sanityProjectId: "ztp3p7vy",
   },
-  {
-    name: "Localhost",
-    baseURL: "http://localhost:4005",
-    sanityProjectId: "sorypy4x",
-    ciSkip: true,
-  },
+  // {
+  //   name: "Localhost",
+  //   baseURL: "http://localhost:4005",
+  //   sanityProjectId: "sorypy4x",
+  //   ciSkip: true,
+  // },
 ];

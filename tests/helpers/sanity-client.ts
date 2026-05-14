@@ -4,11 +4,10 @@ const SANITY_API_VERSION = "v2026-05-13";
 const SANITY_DATASET = "dev";
 const SANITY_PERSPECTIVE = "drafts";
 
-// conditionCategories,
-const GROQ_QUERY = `*[_type == 'singleCondition' && conditionLogStatus != 'disabled' && status != 'disabled']{
+const GROQ_QUERY = `
+*[_type == 'singleCondition' && conditionLogStatus != 'disabled' && status != 'disabled']{
   userJourneyFlow,
   title,
-  
   conditionId,
   corporateId,
   "isPreConsult":categoryType == 'pre_consult',

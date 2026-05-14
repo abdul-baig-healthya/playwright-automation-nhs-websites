@@ -25,7 +25,7 @@
   // "postStartCommand": "pm2 start ecosystem.config.js --no-autorestart || pm2 restart ecosystem.config.js ; pm2 save",
   // "postStartCommand": "gh codespace ports visibility 7890:public 8080:public || true",
   // "postStartCommand": "pm2 start ecosystem.config.js --no-autorestart || pm2 restart ecosystem.config.js && pm2 save && gh codespace ports visibility 7890 public && gh codespace ports visibility 8080 public || true",
-  "postStartCommand": "gh codespace ports visibility 7890:public 8080:public -c $CODESPACE_NAME || true",
+  "postStartCommand": "pm2 start ecosystem.config.js --no-autorestart || pm2 restart ecosystem.config.js ; pm2 save ; gh codespace ports visibility 7890:public 8080:public -c $CODESPACE_NAME || true",
   "customizations": {
     "vscode": {
       "extensions": ["ms-playwright.playwright"]

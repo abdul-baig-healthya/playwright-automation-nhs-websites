@@ -4,14 +4,15 @@ const SANITY_API_VERSION = "v2026-05-13";
 const SANITY_DATASET = "dev";
 const SANITY_PERSPECTIVE = "drafts";
 
+// conditionCategories,
 const GROQ_QUERY = `*[_type == 'singleCondition' && conditionLogStatus != 'disabled' && status != 'disabled']{
   userJourneyFlow,
   title,
-  conditionCategories,
+  
   conditionId,
   corporateId,
-  isNHS,
-  isPreConsult
+  "isPreConsult":categoryType == 'pre_consult',
+  "isNHS": categoryType == 'pre_consult' && services == 'NHS'
 }`;
 
 /**
@@ -29,7 +30,7 @@ export interface SanityCondition {
   title: string;
   conditionId: number | string;
   corporateId?: number | string;
-  conditionCategories?: string;
+  // conditionCategories?: string;
   /** true = condition lives on /conditions; false = lives on /lifestyle-treatments */
   isPreConsult?: boolean;
   isNHS?: boolean;
@@ -41,7 +42,7 @@ interface RawSanityCondition {
   title?: string;
   conditionId?: number | string;
   corporateId?: number | string;
-  conditionCategories?: string;
+  // conditionCategories?: string;
   isPreConsult?: boolean;
   isNHS?: boolean;
   userJourneyFlow?: RawUserJourneyFlow;
@@ -85,7 +86,7 @@ export async function fetchConditions(
     title: it.title ?? "",
     conditionId: it.conditionId ?? "",
     corporateId: it.corporateId,
-    conditionCategories: it.conditionCategories,
+    // conditionCategories: it.conditionCategories,
     isPreConsult: it.isPreConsult,
     isNHS: it.isNHS,
     userJourneyFlow: normaliseUserJourneyFlow(it.userJourneyFlow),

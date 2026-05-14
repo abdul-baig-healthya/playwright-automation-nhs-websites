@@ -19,13 +19,13 @@ function buildFlowConfig(
   flowId: string,
   condition: SanityCondition,
 ): FlowConfig {
-  // isPreConsult=false → condition card lives on /lifestyle-treatments, not /conditions
+  // isPreConsult=false → /lifestyle-treatments; isNHS=true → nhs; else → private
   const conditionJourneyType: "nhs" | "private" | "lifestyle" =
     condition.isPreConsult === false
       ? "lifestyle"
-      : /private/i.test(condition.conditionCategories ?? "")
-        ? "private"
-        : "nhs";
+      : condition.isNHS === true
+        ? "nhs"
+        : "private";
 
   return {
     name: `User Journey ${flowId}`,

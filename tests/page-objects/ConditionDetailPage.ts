@@ -48,43 +48,67 @@ export class ConditionDetailPage {
       'button:has-text("Check Eligibility")',
       'a:has-text("Start Assessment")',
       'button:has-text("Start Assessment")',
-      'a:has-text("Start Assessment")',
       'button:has-text("Start Assesment")',
       ':text("Take Assessment")',
       ':text("Take Assesment")',
+      // Eligibility form heading variants
+      ':text("Check if your condition is eligible")',
       ':text("Am I eligible for our pharmacy services?")',
       ':text("Am I eligible for NHS services?")',
       ':text("Check if your condition is covered")',
+      ':text("eligible for our pharmacy services")',
+      // Container / input fallbacks
+      '#check_condition_inner',
+      'input[type="radio"][id="male"]',
+      'input[type="radio"][id="female"]',
+      // Book-only CTAs (e.g. travel vaccination)
+      'a:has-text("Book Appointment")',
+      'button:has-text("Book Appointment")',
+      'a:has-text("Book Now")',
+      'button:has-text("Book Now")',
     ];
 
-    let pageReady = false;
-    for (const sel of readySelectors) {
-      const found = await this.page
-        .locator(sel)
-        .first()
-        .isVisible()
-        .catch(() => false);
-      if (found) {
-        pageReady = true;
-        break;
+    const checkSelectors = async () => {
+      for (const sel of readySelectors) {
+        const found = await this.page
+          .locator(sel)
+          .first()
+          .isVisible()
+          .catch(() => false);
+        if (found) return true;
       }
-    }
+      return false;
+    };
+
+    // Scroll down to trigger any lazy-rendered eligibility widget, then check
+    await this.page.evaluate(() => window.scrollBy(0, 600)).catch(() => {});
+    await this.page.waitForTimeout(500);
+
+    let pageReady = await checkSelectors();
 
     if (!pageReady) {
+      // Give the React component more time; scroll again and poll
+      await this.page.evaluate(() => window.scrollBy(0, 300)).catch(() => {});
       try {
         await Promise.race(
           readySelectors.map((sel) =>
             this.page
               .locator(sel)
               .first()
-              .waitFor({ state: "visible", timeout: 20_000 }),
+              .waitFor({ state: "visible", timeout: 30_000 }),
           ),
         );
+        pageReady = true;
       } catch {
+        const bodySnippet = await this.page
+          .locator("body")
+          .textContent()
+          .catch(() => "");
         throw new Error(
-          `Condition detail page did not reach a ready state within 20s.\n` +
+          `Condition detail page did not reach a ready state within 30s.\n` +
             `URL: ${this.page.url()}\n` +
-            `Expected one of: ${readySelectors.join(" | ")}`,
+            `Expected one of: ${readySelectors.join(" | ")}\n` +
+            `Page text: ${bodySnippet?.slice(0, 400)}`,
         );
       }
     }

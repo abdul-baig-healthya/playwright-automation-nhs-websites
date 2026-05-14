@@ -134,7 +134,8 @@ function arraysEqual(a, b) {
 }
 
 function fetchSanityConditions(projectId) {
-  const query = `*[_type == 'singleCondition' && conditionLogStatus != 'disabled' && status != 'disabled']{userJourneyFlow, title, conditionId, corporateId, isNHS, isPreConsult}`;
+  const query = `*[_type == 'singleCondition' && conditionLogStatus != 'disabled' && status != 'disabled']{userJourneyFlow, title, conditionId, corporateId, "isPreConsult":categoryType == 'pre_consult',
+    "isNHS": categoryType == 'pre_consult' && services == 'NHS'}`;
   const url = `https://${projectId}.api.sanity.io/v2026-05-13/data/query/dev?query=${encodeURIComponent(query)}&perspective=drafts`;
   return new Promise((resolve, reject) => {
     const req = https.get(url, { headers: { Accept: "application/json" } }, (res) => {

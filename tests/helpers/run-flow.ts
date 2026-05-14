@@ -352,14 +352,24 @@ async function runConditionFlowImpl(
       const count = await links.count();
       let found: string | null = null;
       const target = config.conditionName.toLowerCase();
+      // Slugified form: "Erectile dysfunction" → "erectile-dysfunction"
+      const slugTarget = target
+        .replace(/[^\w]+/g, "-")
+        .replace(/^-+|-+$/g, "");
       for (let i = 0; i < count; i++) {
-        const href = await links.nth(i).getAttribute("href");
-        const text =
-          (await links.nth(i).innerText().catch(() => "")) || "";
+        const link = links.nth(i);
+        const href = await link.getAttribute("href");
         if (!href) continue;
+        // The link text is always "See more" — get the h2 title from the
+        // enclosing card instead (nearest ancestor div that contains an h2).
+        const cardTitle = await link
+          .locator("xpath=ancestor::div[.//h2][1]//h2")
+          .first()
+          .innerText()
+          .catch(() => "");
         if (
-          href.toLowerCase().includes(target) ||
-          text.toLowerCase().includes(target)
+          href.toLowerCase().includes(slugTarget) ||
+          cardTitle.toLowerCase().includes(target)
         ) {
           found = href;
           break;

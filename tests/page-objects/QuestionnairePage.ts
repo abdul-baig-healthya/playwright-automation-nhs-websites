@@ -14,9 +14,20 @@ export class QuestionnairePage {
   readonly page: Page;
   private readonly MAX_QUESTIONS = 50;
   private readonly answeredRuleKeys = new Set<string>();
+  private retryAttempt = 0;
+  private readonly answeredGenericQuestions = new Set<string>();
 
   constructor(page: Page) {
     this.page = page;
+  }
+
+  setRetryAttempt(attempt: number): void {
+    this.retryAttempt = attempt;
+  }
+
+  resetAnswerState(): void {
+    this.answeredRuleKeys.clear();
+    this.answeredGenericQuestions.clear();
   }
 
   /**
@@ -47,44 +58,59 @@ export class QuestionnairePage {
 
   /**
    * Walk through all questionnaire steps until the signup/booking page appears.
-   * For each question detected:
-   *  - Single choice (radio) → select first option
-   *  - Checkbox group → check first option
-   *  - Text/textarea → type a generic answer
-   *  - Number → type "70"
-   *  - Date → fill with test DOB
-   * Then click Next/Continue/Submit.
+   * Answers ALL visible questions per page (including nested questions that
+   * appear after selecting a parent answer), then progresses. On retry attempts
+   * (set via setRetryAttempt), picks different options to escape dead-ends.
    */
   async answerAllQuestions() {
     for (let step = 0; step < this.MAX_QUESTIONS; step++) {
-      await this.page.waitForTimeout(200); // brief pause for animations
+      await this.page.waitForTimeout(200);
 
-      // Guard: once drug selection is visible, stop questionnaire handling.
       if (await this.isOnDrugSelectionPage()) {
-        console.log(
-          "[QuestionnairePage] Drug selection UI detected — exiting questionnaire handler",
-        );
+        console.log("[QuestionnairePage] Drug selection UI detected — exiting questionnaire handler");
         return;
       }
-
-      // Guard: once payment is visible, stop questionnaire handling immediately.
       if (await this.isOnPaymentPage()) {
-        console.log(
-          "[QuestionnairePage] Payment UI detected — exiting questionnaire handler",
-        );
+        console.log("[QuestionnairePage] Payment UI detected — exiting questionnaire handler");
         return;
       }
+      if (await this.isOnSignupOrBookingPage()) return;
 
-      // If we've reached the signup form, stop
-      if (await this.isOnSignupOrBookingPage()) {
-        return;
+      // Review screen: defer to Confirm click
+      const onReviewScreen =
+        (await this.page.locator('button:has-text("Edit Questionnaire")').first().isVisible().catch(() => false)) &&
+        (await this.page.locator('button:has-text("Confirm")').first().isVisible().catch(() => false));
+      if (onReviewScreen) {
+        console.log("[QuestionnairePage] Questionnaire review screen detected — deferring to Confirm click");
+        await this.progressQuestionnaire();
+        continue;
       }
 
-      let answered = await this.answerCurrentQuestion();
+      // Rules-based pass (handles shingles, weight-management, ED via explicit rules)
+      const rulesHandled = await this.answerByConditionRules();
+      if (rulesHandled) {
+        console.log("[QuestionnairePage] Completed visible condition rules");
+        await this.clickConfirmIfVisible();
+        await this.page.waitForTimeout(400);
+        continue;
+      }
+
+      // Generic pass: answer one visible unanswered question, then immediately try
+      // to progress. This handles questionnaires where nested questions cascade
+      // continuously — we no longer wait for "nothing left" before clicking Save/Next.
+      const genericAnswered = await this.answerAllVisibleGenericQuestions();
+      if (genericAnswered > 0) {
+        // Short wait for DOM to settle after the answer (nested questions may appear).
+        await this.page.waitForTimeout(600);
+        // Try to advance: if Save/Next is now enabled (all required answered), click it.
+        // If not (more required questions remain), this is a no-op and we loop to answer more.
+        await this.progressQuestionnaire();
+        continue;
+      }
+
+      // Nothing to answer — try to progress
       const advanced = await this.progressQuestionnaire();
-
-      if (!advanced && !answered) {
-        // No question found and no button — might be loading or done
+      if (!advanced) {
         await this.page.waitForTimeout(1000);
         if (await this.isOnDrugSelectionPage()) return;
         if (await this.isOnSignupOrBookingPage()) return;
@@ -1499,9 +1525,7 @@ export class QuestionnairePage {
   }
 
   private async handleNHS111Popup(): Promise<boolean> {
-    if (await this.isOnPaymentPage()) {
-      return false;
-    }
+    if (await this.isOnPaymentPage()) return false;
 
     const popupRoot = this.page
       .locator(
@@ -1513,17 +1537,18 @@ export class QuestionnairePage {
       )
       .first();
 
+    // Require the popup modal itself to be visible — don't trigger on a
+    // "Book Private Consultation" button that may exist on the destination page.
     const popupVisible = await popupRoot.isVisible().catch(() => false);
+    if (!popupVisible) return false;
+
     const popupButton = this.page
       .locator(
         'button:has-text("Book Private Consultation"), a:has-text("Book Private Consultation")',
       )
       .first();
 
-    if (
-      !popupVisible &&
-      !(await popupButton.isVisible({ timeout: 1_500 }).catch(() => false))
-    ) {
+    if (!(await popupButton.isVisible({ timeout: 0 }).catch(() => false))) {
       return false;
     }
 
@@ -1531,12 +1556,15 @@ export class QuestionnairePage {
       "[QuestionnairePage] NHS 111 popup detected — clicking Book Private Consultation",
     );
     await popupButton.scrollIntoViewIfNeeded().catch(() => {});
-    await popupButton.waitFor({ state: "visible", timeout: 10_000 });
+    // popupRoot visibility already confirmed above — no redundant waitFor needed
     await popupButton.click({ force: true }).catch(async () => {
       await popupButton.evaluate((el: HTMLElement) => el.click());
     });
 
     await this.page.waitForLoadState("networkidle").catch(() => {});
+    // Wait for popup to fully close before returning so the next iteration
+    // doesn't re-detect a partially-animated modal.
+    await popupRoot.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {});
     return true;
   }
 
@@ -1555,7 +1583,225 @@ export class QuestionnairePage {
         ].join(", "),
       )
       .first()
-      .isVisible({ timeout: 300 })
+      .isVisible({ timeout: 0 })
       .catch(() => false);
+  }
+
+  /**
+   * Find the first unanswered input control on the page and answer it (one at a time).
+   * Checking "already answered" by inspecting DOM state (checked radio, filled value)
+   * rather than tracking keys — avoids stale-key bugs with nested questions.
+   * Falls back to legacy path for rule-driven conditions.
+   * Returns 1 if something was answered, 0 otherwise.
+   */
+  private async answerAllVisibleGenericQuestions(): Promise<number> {
+    // answerByConditionRules() is always called first in answerAllQuestions and
+    // handles Shingles/Weight Management/ED rules before this is reached.
+    // Here we just pick the right generic path based on page structure.
+
+    // No wrapper structure at all → legacy single-question path
+    const wrapperCount = await this.page.locator(".questionnaire-answer-wrapper").count().catch(() => 0);
+    if (wrapperCount === 0) {
+      return (await this.answerCurrentQuestion()) ? 1 : 0;
+    }
+
+    return (await this.answerNextUnansweredQuestion()) ? 1 : 0;
+  }
+
+  /**
+   * Find and answer the first unanswered input control visible on the page.
+   * Processes one control per call so the outer loop can wait for nested questions
+   * to appear between each answered question.
+   *
+   * Order: radio group → checkbox group → single checkbox → date → number → text/textarea.
+   * Skips groups that already have a checked/filled value.
+   * Excludes the metric/imperial unit-toggle at the top of the questionnaire.
+   */
+  private async answerNextUnansweredQuestion(): Promise<boolean> {
+    // ── Radio groups (single-choice questions) ──────────────────────────────
+    // Exclude the metric/imperial toggle rendered by QuestionnaireWizard.
+    const radioGroups = this.page.locator(
+      ".ant-radio-group:visible:not(.radiobuttongroup):not(.ant-group-healthya)",
+    );
+    const groupCount = await radioGroups.count().catch(() => 0);
+
+    for (let i = 0; i < groupCount; i++) {
+      const group = radioGroups.nth(i);
+      if (!(await group.isVisible().catch(() => false))) continue;
+
+      // Skip groups where an option is already selected
+      const checkedCount = await group
+        .locator(".ant-radio-wrapper-checked, .ant-radio-button-wrapper-checked, input[type='radio']:checked")
+        .count()
+        .catch(() => 0);
+      if (checkedCount > 0) continue;
+
+      const options = group.locator(
+        ".ant-radio-wrapper:not(.ant-radio-wrapper-disabled), .ant-radio-button-wrapper:not(.ant-radio-button-wrapper-disabled)",
+      );
+      const optCount = await options.count().catch(() => 0);
+      if (!optCount) continue;
+
+      console.log(`[QuestionnairePage] Answering radio group ${i + 1}/${groupCount} (attempt ${this.retryAttempt})`);
+      return this.pickRadioOptionByAttempt(options, optCount);
+    }
+
+    // ── Checkbox groups (multi-choice questions) ────────────────────────────
+    const checkboxGroups = this.page.locator(".ant-checkbox-group:visible");
+    const cbGroupCount = await checkboxGroups.count().catch(() => 0);
+
+    for (let i = 0; i < cbGroupCount; i++) {
+      const group = checkboxGroups.nth(i);
+      if (!(await group.isVisible().catch(() => false))) continue;
+
+      const checkedCount = await group
+        .locator(".ant-checkbox-wrapper-checked, input[type='checkbox']:checked")
+        .count()
+        .catch(() => 0);
+      if (checkedCount > 0) continue;
+
+      const options = group.locator(".ant-checkbox-wrapper:not(.ant-checkbox-wrapper-disabled)");
+      const optCount = await options.count().catch(() => 0);
+      if (!optCount) continue;
+
+      const noneOpt = options.filter({ hasText: /none of the above|none apply|^none$/i });
+      if (this.retryAttempt === 0 && (await noneOpt.count()) > 0) {
+        const opt = noneOpt.first();
+        if (await opt.isVisible().catch(() => false)) {
+          await opt.scrollIntoViewIfNeeded().catch(() => {});
+          await opt.click({ force: true }).catch(async () => { await opt.evaluate((el: HTMLElement) => el.click()); });
+          await this.page.waitForTimeout(400);
+          return true;
+        }
+      }
+      const idx = this.retryAttempt === 0 ? 0 : (this.retryAttempt - 1) % optCount;
+      const opt = options.nth(idx);
+      if (await opt.isVisible().catch(() => false)) {
+        await opt.scrollIntoViewIfNeeded().catch(() => {});
+        await opt.click({ force: true }).catch(async () => { await opt.evaluate((el: HTMLElement) => el.click()); });
+        await this.page.waitForTimeout(400);
+        return true;
+      }
+    }
+
+    // ── Standalone checkboxes (check_agree type) ────────────────────────────
+    const standaloneCheckboxes = this.page.locator(
+      ".questionnaire-answer-wrapper:visible input[type='checkbox']:not([disabled])",
+    );
+    const stCbCount = await standaloneCheckboxes.count().catch(() => 0);
+    for (let i = 0; i < stCbCount; i++) {
+      const cb = standaloneCheckboxes.nth(i);
+      if (!(await cb.isVisible().catch(() => false))) continue;
+      if (await cb.isChecked().catch(() => false)) continue;
+      await cb.scrollIntoViewIfNeeded().catch(() => {});
+      await cb.check({ force: true }).catch(() => {});
+      await this.page.waitForTimeout(300);
+      return true;
+    }
+
+    // ── Date pickers ────────────────────────────────────────────────────────
+    const datePickers = this.page.locator(
+      ".questionnaire-answer-wrapper:visible .ant-picker input:not([disabled])",
+    );
+    const dpCount = await datePickers.count().catch(() => 0);
+    for (let i = 0; i < dpCount; i++) {
+      const input = datePickers.nth(i);
+      if (!(await input.isVisible().catch(() => false))) continue;
+      const value = (await input.inputValue().catch(() => "")) ?? "";
+      if (value.trim()) continue; // already filled
+      console.log(`[QuestionnairePage] Filling date picker ${i + 1}`);
+      return this.fillDateByRule("01-01-2020");
+    }
+
+    // ── Number inputs ───────────────────────────────────────────────────────
+    const numberInputs = this.page.locator(
+      ".questionnaire-answer-wrapper:visible input[type='number']:not([disabled])",
+    );
+    const numCount = await numberInputs.count().catch(() => 0);
+    for (let i = 0; i < numCount; i++) {
+      const input = numberInputs.nth(i);
+      if (!(await input.isVisible().catch(() => false))) continue;
+      const value = (await input.inputValue().catch(() => "")) ?? "";
+      if (value.trim()) continue;
+      const nearText = await input
+        .evaluate((el: Element) => el.closest(".questionnaire-answer-wrapper")?.textContent ?? "")
+        .catch(() => "");
+      const val = /height/i.test(nearText) ? "170" : "70";
+      await input.scrollIntoViewIfNeeded().catch(() => {});
+      await input.fill(val).catch(() => {});
+      await input.blur().catch(() => {});
+      return true;
+    }
+
+    // ── Text inputs / textareas ─────────────────────────────────────────────
+    const textInputs = this.page.locator(
+      ".questionnaire-answer-wrapper:visible input[type='text']:not([disabled]):not([name='first_name']):not([name='last_name']):not([name='postcode'])," +
+      " .questionnaire-answer-wrapper:visible textarea:not([disabled])",
+    );
+    const txtCount = await textInputs.count().catch(() => 0);
+    for (let i = 0; i < txtCount; i++) {
+      const input = textInputs.nth(i);
+      if (!(await input.isVisible().catch(() => false))) continue;
+      if (!(await input.isEnabled().catch(() => false))) continue;
+      const value = (await input.inputValue().catch(() => "")) ?? "";
+      if (value.trim()) continue;
+      await input.scrollIntoViewIfNeeded().catch(() => {});
+      await input.fill("None").catch(() => {});
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Pick a radio/ant-radio option for this attempt.
+   * Attempt 0: prefer "No"/"None"/"do not have" patterns, fall back to last.
+   * Attempt N: pick option at index (N-1) % count — different each retry.
+   */
+  private async pickRadioOptionByAttempt(
+    options: ReturnType<Page["locator"]>,
+    count: number,
+  ): Promise<boolean> {
+    if (this.retryAttempt === 0) {
+      const preferencePatterns = [
+        /^I do not have these symptoms$/i,
+        /do not have these symptoms/i,
+        /do not have/i,
+        /^No$/i,
+        /None of the above/i,
+        /None apply/i,
+        /^None$/i,
+      ];
+      for (const pattern of preferencePatterns) {
+        const match = options.filter({ hasText: pattern });
+        if (await match.count() > 0) {
+          const opt = match.first();
+          if (await opt.isVisible().catch(() => false)) {
+            await opt.scrollIntoViewIfNeeded().catch(() => {});
+            await opt.click({ force: true }).catch(async () => { await opt.evaluate((el: HTMLElement) => el.click()); });
+            await this.page.waitForTimeout(300);
+            return true;
+          }
+        }
+      }
+      // Fall back to last option
+      const last = options.nth(count - 1);
+      if (await last.isVisible().catch(() => false)) {
+        await last.scrollIntoViewIfNeeded().catch(() => {});
+        await last.click({ force: true }).catch(() => {});
+        await this.page.waitForTimeout(300);
+        return true;
+      }
+    } else {
+      const idx = (this.retryAttempt - 1) % count;
+      const opt = options.nth(idx);
+      if (await opt.isVisible().catch(() => false)) {
+        await opt.scrollIntoViewIfNeeded().catch(() => {});
+        await opt.click({ force: true }).catch(async () => { await opt.evaluate((el: HTMLElement) => el.click()); });
+        await this.page.waitForTimeout(300);
+        return true;
+      }
+    }
+    return false;
   }
 }

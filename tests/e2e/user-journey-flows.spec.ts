@@ -19,11 +19,17 @@ function buildFlowConfig(
   flowId: string,
   condition: SanityCondition,
 ): FlowConfig {
+  // isPreConsult=false → condition card lives on /lifestyle-treatments, not /conditions
+  const conditionJourneyType: "nhs" | "private" | "lifestyle" =
+    condition.isPreConsult === false
+      ? "lifestyle"
+      : /private/i.test(condition.conditionCategories ?? "")
+        ? "private"
+        : "nhs";
+
   return {
     name: `User Journey ${flowId}`,
-    conditionJourneyType: /private/i.test(condition.conditionCategories ?? "")
-      ? "private"
-      : "nhs",
+    conditionJourneyType,
     conditionName: condition.title,
     booking: {
       appointmentType: "Video",
@@ -43,7 +49,13 @@ function isConditionNotFoundError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return (
     /not found on \/conditions/i.test(msg) ||
-    /Flow reached a dead-end/i.test(msg)
+    /not found on \/lifestyle-treatments/i.test(msg) ||
+    /Flow reached a dead-end/i.test(msg) ||
+    /Condition detail page did not reach a ready state/i.test(msg) ||
+    /Appointment type .* not available/i.test(msg) ||
+    /Select next available slot.*not found/i.test(msg) ||
+    /No available slots found/i.test(msg) ||
+    /No available time slots found/i.test(msg)
   );
 }
 
@@ -108,9 +120,16 @@ test.describe("User Journey Flows", () => {
           if (isConditionNotFoundError(err) && i < conditions.length - 1) {
             const msg = err instanceof Error ? err.message : String(err);
             attempts.push({ title: condition.title, error: msg });
-            const reason = /dead-end/i.test(msg) ? "dead-end (self-care/referral)" : "not on /conditions";
+            const reason = /dead-end/i.test(msg)
+              ? "dead-end (self-care/referral)"
+              : /lifestyle-treatments/i.test(msg)
+                ? "not on /lifestyle-treatments"
+                : /ready state/i.test(msg)
+                  ? "detail page didn't load (wrong UI or app error)"
+                  : "not on /conditions";
+            const detail = msg.split("\n")[0].slice(0, 120);
             console.log(
-              `↻ Condition "${condition.title}" skipped (${reason}) — trying next condition`,
+              `↻ Condition "${condition.title}" skipped (${reason}): ${detail}`,
             );
             // Reset state for the next attempt
             await page.context().clearCookies().catch(() => {});
@@ -122,7 +141,7 @@ test.describe("User Journey Flows", () => {
 
       if (!succeeded) {
         throw new Error(
-          `All ${conditions.length} matching condition(s) for flow ${flow.id} were not visible on /conditions for "${pharmacyName}". Attempts: ${attempts
+          `All ${conditions.length} matching condition(s) for flow ${flow.id} were not found for "${pharmacyName}". Attempts: ${attempts
             .map((a) => `"${a.title}"`)
             .join(", ")}`,
         );

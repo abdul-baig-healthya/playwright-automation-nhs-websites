@@ -388,244 +388,281 @@ async function runConditionFlowImpl(
     }
   }
 
-  // ── Step 2: Set cookie + navigate to detail page ──────────────────────────
-  const cookieOrigin = page.url().startsWith("http")
-    ? new URL(page.url()).origin
-    : baseUrl;
+  // ── Steps 2–N: Navigate + run (with questionnaire dead-end retry) ─────────
+  // Rule-based flows (questionnaireRulesKey set) never retry — their answers are
+  // deterministic. Generic flows retry up to 3 times with different option picks.
+  const MAX_QUESTIONNAIRE_ATTEMPTS = config.questionnaireRulesKey ? 1 : 3;
 
-  if (pharmacySlug) {
-    await page.context().addCookies([
-      { name: "selected-corporate-id", value: pharmacySlug, url: cookieOrigin },
-    ]);
-  }
+  for (let qAttempt = 0; qAttempt < MAX_QUESTIONNAIRE_ATTEMPTS; qAttempt++) {
+    questionnaire.setRetryAttempt(qAttempt);
+    questionnaire.resetAnswerState();
 
-  const detailUrl = conditionHref.startsWith("http")
-    ? conditionHref
-    : `${baseUrl}${conditionHref}`;
-  await page.goto(detailUrl);
-  await detailPage.waitForDetailPage();
-
-  // ── Step 3: Eligibility form ──────────────────────────────────────────────
-  await detailPage.fillEligibilityForm({
-    gender: user.gender,
-    day: user.dob.day,
-    month: user.dob.month,
-    year: user.dob.year,
-  });
-
-  // ── Step 4: Start Assessment ──────────────────────────────────────────────
-  await detailPage.clickStartAssessment();
-  await guestContinuePage.continueAsGuestIfVisible();
-  await page
-    .waitForURL("**/questionnaire**", { timeout: 15_000 })
-    .catch(() => {});
-  await page.waitForLoadState("domcontentloaded");
-
-  console.log(`✔ Post-assessment URL: ${page.url()}`);
-
-  // ── Steps 5–N: Dynamic journey loop ──────────────────────────────────────
-  const MAX_ITERATIONS = 40;
-  const stepVisits: Record<string, number> = {};
-  const MAX_STEP_VISITS = 6;
-  let flowCompleted = false;
-
-  for (let i = 0; i < MAX_ITERATIONS; i++) {
-    if (flowCompleted) break;
-    await page.waitForTimeout(1500);
-
-    let step = await detectCurrentStep(page);
-    console.log(
-      `🔍 [${config.name}] Iteration ${i + 1}: detected step = "${step}"`,
-    );
-
-    if (step === "success") {
-      console.log("✔ Booking success state reached!");
-      break;
+    if (qAttempt > 0) {
+      console.log(
+        `↻ [Questionnaire retry ${qAttempt}/${MAX_QUESTIONNAIRE_ATTEMPTS - 1}] Dead-end on previous attempt — retrying with different answers`,
+      );
+      await page.context().clearCookies().catch(() => {});
     }
 
-    if (step === "dead_end") {
+    // ── Step 2: Set cookie + navigate to detail page ──────────────────────
+    const cookieOrigin = page.url().startsWith("http")
+      ? new URL(page.url()).origin
+      : baseUrl;
+
+    if (pharmacySlug) {
+      await page.context().addCookies([
+        { name: "selected-corporate-id", value: pharmacySlug, url: cookieOrigin },
+      ]);
+    }
+
+    const detailUrl = conditionHref.startsWith("http")
+      ? conditionHref
+      : `${baseUrl}${conditionHref}`;
+    await page.goto(detailUrl);
+
+    // Detect server-side redirects away from the condition page (e.g. HTTP 400 → root)
+    const landedUrl = page.url();
+    if (!landedUrl.includes("/conditions/")) {
       throw new Error(
-        `Flow reached a dead-end (self-care/referral/ineligible) for condition "${config.conditionName}" at ${page.url()} — retry with another condition`,
+        `Condition "${config.conditionName}" not found on /conditions — redirected to ${landedUrl}`,
       );
     }
 
-    if (step === "unknown") {
-      await page.waitForTimeout(500);
-      step = await detectCurrentStep(page);
-      if (step === "unknown") await page.waitForTimeout(1200);
-      step = await detectCurrentStep(page);
+    await detailPage.waitForDetailPage();
 
-      if (
-        step === "unknown" &&
-        /payment|checkout|card|3dsecure|challenge/i.test(page.url())
-      ) {
-        step = "payment";
-        console.log('↻ URL fallback forced step = "payment"');
+    // ── Step 3: Eligibility form ────────────────────────────────────────────
+    await detailPage.fillEligibilityForm({
+      gender: user.gender,
+      day: user.dob.day,
+      month: user.dob.month,
+      year: user.dob.year,
+    });
+
+    // ── Step 4: Start Assessment ────────────────────────────────────────────
+    await detailPage.clickStartAssessment();
+    await guestContinuePage.continueAsGuestIfVisible();
+    await page
+      .waitForURL("**/questionnaire**", { timeout: 15_000 })
+      .catch(() => {});
+    await page.waitForLoadState("domcontentloaded");
+
+    console.log(`✔ Post-assessment URL: ${page.url()}`);
+
+    // ── Steps 5–N: Dynamic journey loop ──────────────────────────────────────
+    const MAX_ITERATIONS = 40;
+    const stepVisits: Record<string, number> = {};
+    const MAX_STEP_VISITS = 6;
+    let flowCompleted = false;
+    let gotDeadEnd = false;
+
+    for (let i = 0; i < MAX_ITERATIONS; i++) {
+      if (flowCompleted) break;
+      await page.waitForTimeout(1500);
+
+      let step = await detectCurrentStep(page);
+      console.log(
+        `🔍 [${config.name}] Iteration ${i + 1}: detected step = "${step}"`,
+      );
+
+      if (step === "success") {
+        console.log("✔ Booking success state reached!");
+        break;
+      }
+
+      if (step === "dead_end") {
+        if (!config.questionnaireRulesKey && qAttempt < MAX_QUESTIONNAIRE_ATTEMPTS - 1) {
+          console.log(
+            `⚠ Dead-end on questionnaire attempt ${qAttempt + 1} — will retry with different answers`,
+          );
+          gotDeadEnd = true;
+          break;
+        }
+        throw new Error(
+          `Flow reached a dead-end (self-care/referral/ineligible) for condition "${config.conditionName}" at ${page.url()} — retry with another condition`,
+        );
       }
 
       if (step === "unknown") {
-        console.log(`⚠ Unknown step at URL: ${page.url()} — stopping loop`);
-        break;
-      }
-    }
+        await page.waitForTimeout(500);
+        step = await detectCurrentStep(page);
+        if (step === "unknown") await page.waitForTimeout(1200);
+        step = await detectCurrentStep(page);
 
-    stepVisits[step] = (stepVisits[step] ?? 0) + 1;
-    if (stepVisits[step] > MAX_STEP_VISITS) {
-      console.log(
-        `⚠ Stuck: step "${step}" visited ${stepVisits[step]} times — stopping`,
-      );
-      break;
-    }
-
-    switch (step) {
-      case "guest_continue": {
-        console.log("→ Handling continue-as-guest step");
-        await guestContinuePage.continueAsGuestIfVisible();
-        await page.waitForTimeout(800);
-        break;
-      }
-
-      case "product_signup": {
-        console.log("→ Handling product signup step");
-        await productSignup.completeProductSignupFlow({
-          firstName: user.firstName,
-          lastName: user.lastName,
-          postcode: user.postcode,
-          gender: user.gender,
-          dobIso: user.dob.iso,
-          phone: user.phone,
-          email: user.email,
-          password: user.password,
-          confirmPassword: user.confirmPassword,
-        });
-        break;
-      }
-
-      case "questionnaire_submit": {
-        console.log("→ Handling questionnaire step");
-        await questionnaire.waitForPage();
-        await questionnaire.answerAllQuestions();
-        break;
-      }
-
-      case "sign_up": {
-        console.log("→ Handling sign-up step");
-
-        // Lifestyle / dynamic checkout signup branch
-        if (isLifestyle) {
-          const handledDynamicCheckoutSignup =
-            await signup.completeDynamicCheckoutSignupIfVisible({
-              firstName: user.firstName,
-              lastName: user.lastName,
-              postcode: user.postcode,
-              gender: user.gender,
-              dobIso: user.dob.iso,
-              phone: user.phone,
-              email: user.email,
-              password: user.password,
-              confirmPassword: user.confirmPassword,
-            });
-          if (handledDynamicCheckoutSignup) break;
+        if (
+          step === "unknown" &&
+          /payment|checkout|card|3dsecure|challenge/i.test(page.url())
+        ) {
+          step = "payment";
+          console.log('↻ URL fallback forced step = "payment"');
         }
 
-        const hasNHSForm = await page
-          .locator('input[name="first_name"]')
-          .isVisible()
-          .catch(() => false);
+        if (step === "unknown") {
+          console.log(`⚠ Unknown step at URL: ${page.url()} — stopping loop`);
+          break;
+        }
+      }
 
-        if (hasNHSForm) {
-          await signup.waitForPage();
-          await signup.fillNHSPDSForm({
+      stepVisits[step] = (stepVisits[step] ?? 0) + 1;
+      if (stepVisits[step] > MAX_STEP_VISITS) {
+        console.log(
+          `⚠ Stuck: step "${step}" visited ${stepVisits[step]} times — stopping`,
+        );
+        break;
+      }
+
+      switch (step) {
+        case "guest_continue": {
+          console.log("→ Handling continue-as-guest step");
+          await guestContinuePage.continueAsGuestIfVisible();
+          await page.waitForTimeout(800);
+          break;
+        }
+
+        case "product_signup": {
+          console.log("→ Handling product signup step");
+          await productSignup.completeProductSignupFlow({
             firstName: user.firstName,
             lastName: user.lastName,
             postcode: user.postcode,
             gender: user.gender,
             dobIso: user.dob.iso,
+            phone: user.phone,
+            email: user.email,
+            password: user.password,
+            confirmPassword: user.confirmPassword,
           });
-          if (
-            config.conditionJourneyType === "private" ||
-            config.conditionJourneyType === "lifestyle"
-          ) {
-            await signup.submitPrivatePatientInfoForm();
-          } else {
-            await signup.submitNHSForm();
-          }
-          await signup.handlePDSResult();
           break;
         }
 
-        const hasEmail = await page
-          .locator('input[name="email"], input[type="email"]')
-          .first()
-          .isVisible()
-          .catch(() => false);
-
-        if (hasEmail) {
-          await signup.fillContactDetails(user.email, user.phone);
-          await signup.submitAndBook();
-          await page.waitForTimeout(3_000);
+        case "questionnaire_submit": {
+          console.log("→ Handling questionnaire step");
+          await questionnaire.waitForPage();
+          await questionnaire.answerAllQuestions();
+          break;
         }
-        break;
-      }
 
-      case "appointment_booking": {
-        console.log("→ Handling booking step");
-        await booking.completeBooking(config.booking);
-        break;
-      }
+        case "sign_up": {
+          console.log("→ Handling sign-up step");
 
-      case "drug_selection": {
-        console.log("→ Handling drug selection step");
-        await drugSelection.waitForPage();
-        await drugSelection.chooseDrugOption(DRUG_SELECTION_PREFERENCES);
-        break;
-      }
+          if (isLifestyle) {
+            const handledDynamicCheckoutSignup =
+              await signup.completeDynamicCheckoutSignupIfVisible({
+                firstName: user.firstName,
+                lastName: user.lastName,
+                postcode: user.postcode,
+                gender: user.gender,
+                dobIso: user.dob.iso,
+                phone: user.phone,
+                email: user.email,
+                password: user.password,
+                confirmPassword: user.confirmPassword,
+              });
+            if (handledDynamicCheckoutSignup) break;
+          }
 
-      case "cart": {
-        console.log("→ Handling cart step");
-        await cart.waitForPage();
-        await cart.handleCart(CART_PREFERENCES);
+          const hasNHSForm = await page
+            .locator('input[name="first_name"]')
+            .isVisible()
+            .catch(() => false);
 
-        if (await shippingAddress.isVisible()) {
-          console.log("→ Shipping address appeared right after cart");
+          if (hasNHSForm) {
+            await signup.waitForPage();
+            await signup.fillNHSPDSForm({
+              firstName: user.firstName,
+              lastName: user.lastName,
+              postcode: user.postcode,
+              gender: user.gender,
+              dobIso: user.dob.iso,
+            });
+            if (
+              config.conditionJourneyType === "private" ||
+              config.conditionJourneyType === "lifestyle"
+            ) {
+              await signup.submitPrivatePatientInfoForm();
+            } else {
+              await signup.submitNHSForm();
+            }
+            await signup.handlePDSResult();
+            break;
+          }
+
+          const hasEmail = await page
+            .locator('input[name="email"], input[type="email"]')
+            .first()
+            .isVisible()
+            .catch(() => false);
+
+          if (hasEmail) {
+            await signup.fillContactDetails(user.email, user.phone);
+            await signup.submitAndBook();
+            await page.waitForTimeout(3_000);
+          }
+          break;
+        }
+
+        case "appointment_booking": {
+          console.log("→ Handling booking step");
+          await booking.completeBooking(config.booking);
+          break;
+        }
+
+        case "drug_selection": {
+          console.log("→ Handling drug selection step");
+          await drugSelection.waitForPage();
+          await drugSelection.chooseDrugOption(DRUG_SELECTION_PREFERENCES);
+          break;
+        }
+
+        case "cart": {
+          console.log("→ Handling cart step");
+          await cart.waitForPage();
+          await cart.handleCart(CART_PREFERENCES);
+
+          if (await shippingAddress.isVisible()) {
+            console.log("→ Shipping address appeared right after cart");
+            await shippingAddress.handleShippingAddress(
+              SHIPPING_ADDRESS_PREFERENCES,
+            );
+          }
+          break;
+        }
+
+        case "shipping_address": {
+          console.log("→ Handling shipping address step");
           await shippingAddress.handleShippingAddress(
             SHIPPING_ADDRESS_PREFERENCES,
           );
+          break;
         }
-        break;
-      }
 
-      case "shipping_address": {
-        console.log("→ Handling shipping address step");
-        await shippingAddress.handleShippingAddress(
-          SHIPPING_ADDRESS_PREFERENCES,
-        );
-        break;
-      }
-
-      case "thank_you": {
-        console.log(
-          "✔ Thank-you page detected! Journey completed successfully.",
-        );
-        await thankYou.handleThankYou(THANK_YOU_PREFERENCES);
-        flowCompleted = true;
-        break;
-      }
-
-      case "payment": {
-        console.log("→ Handling payment step");
-        await payment.completePayment(user.payment, config.paymentMethod);
-        if (payment.isBookingFlowCompleted()) {
-          console.log("✔ Payment completed — ending test flow");
+        case "thank_you": {
+          console.log(
+            "✔ Thank-you page detected! Journey completed successfully.",
+          );
+          await thankYou.handleThankYou(THANK_YOU_PREFERENCES);
           flowCompleted = true;
+          break;
         }
-        break;
+
+        case "payment": {
+          console.log("→ Handling payment step");
+          await payment.completePayment(user.payment, config.paymentMethod);
+          if (payment.isBookingFlowCompleted()) {
+            console.log("✔ Payment completed — ending test flow");
+            flowCompleted = true;
+          }
+          break;
+        }
       }
     }
-  }
 
-  // ── Final assertion ───────────────────────────────────────────────────────
-  const confirmed = await signup.isBookingConfirmed();
-  console.log(`✔ Booking confirmed check: ${confirmed}`);
-  expect(page.url()).not.toContain("/conditions");
+    // Dead-end on this attempt — outer loop will retry with different answers.
+    if (gotDeadEnd) continue;
+
+    // ── Final assertion ─────────────────────────────────────────────────────
+    const confirmed = await signup.isBookingConfirmed();
+    console.log(`✔ Booking confirmed check: ${confirmed}`);
+    expect(page.url()).not.toContain("/conditions");
+    return;
+  }
 }

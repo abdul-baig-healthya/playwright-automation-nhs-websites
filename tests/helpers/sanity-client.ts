@@ -9,7 +9,9 @@ const GROQ_QUERY = `*[_type == 'singleCondition' && conditionLogStatus != 'disab
   title,
   conditionCategories,
   conditionId,
-  corporateId
+  corporateId,
+  isNHS,
+  isPreConsult
 }`;
 
 /**
@@ -28,6 +30,9 @@ export interface SanityCondition {
   conditionId: number | string;
   corporateId?: number | string;
   conditionCategories?: string;
+  /** true = condition lives on /conditions; false = lives on /lifestyle-treatments */
+  isPreConsult?: boolean;
+  isNHS?: boolean;
   /** Normalised, ordered list of journey steps. */
   userJourneyFlow: JourneyStep[];
 }
@@ -37,6 +42,8 @@ interface RawSanityCondition {
   conditionId?: number | string;
   corporateId?: number | string;
   conditionCategories?: string;
+  isPreConsult?: boolean;
+  isNHS?: boolean;
   userJourneyFlow?: RawUserJourneyFlow;
 }
 
@@ -79,6 +86,8 @@ export async function fetchConditions(
     conditionId: it.conditionId ?? "",
     corporateId: it.corporateId,
     conditionCategories: it.conditionCategories,
+    isPreConsult: it.isPreConsult,
+    isNHS: it.isNHS,
     userJourneyFlow: normaliseUserJourneyFlow(it.userJourneyFlow),
   }));
 }

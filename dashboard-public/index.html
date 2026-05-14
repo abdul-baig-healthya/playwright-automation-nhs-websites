@@ -316,7 +316,7 @@
         color: var(--clr-accent);
         font-size: 10px; font-weight: 700; line-height: 1;
         display: inline-flex; align-items: center; justify-content: center;
-        cursor: help; flex-shrink: 0;
+        flex-shrink: 0;
         background: var(--clr-surface);
       }
       .tree-test .tc-info-icon::after {
@@ -694,6 +694,36 @@
         :root { --sidebar-w: 240px; }
         #viewport { height: 160px; }
       }
+      /* ── User Journey condition selector ─────────────────────────────── */
+      .uj-wrapper { display: block; }
+      .uj-condition-row {
+        display: flex; align-items: center; gap: 8px;
+        padding: 4px 14px 7px 14px;
+        border-bottom: 1px solid var(--clr-border);
+      }
+      .uj-mode-toggle {
+        min-width:65px;
+        font-size: 10px; font-weight: 600; white-space: nowrap;
+        padding: 2px 7px; border-radius: 4px;
+        border: 1px solid var(--clr-border-drk);
+        background: var(--clr-surface); color: var(--clr-txt-muted);
+        cursor: pointer; font-family: inherit;
+        transition: border-color 0.15s, color 0.15s, background 0.15s;
+      }
+      .uj-mode-toggle.pinned { border-color: var(--clr-accent); color: var(--clr-accent); }
+      .uj-mode-toggle:hover { border-color: var(--clr-accent); color: var(--clr-accent); }
+      .uj-cond-select {
+        max-width: calc(100% - 28px - 65px);
+        flex: 1; font-size: 11px; font-family: inherit; height: 24px;
+        padding: 0 6px; border-radius: 4px;
+        border: 1px solid var(--clr-border-drk);
+        background: var(--clr-surface); color: var(--clr-txt);
+        outline: none;
+        transition: border-color 0.15s, opacity 0.15s;
+      }
+      .uj-cond-select:disabled { opacity: 0.4; cursor: not-allowed; }
+      .uj-cond-select:focus { border-color: var(--clr-accent); }
+
     </style>
   </head>
   <body>
@@ -916,6 +946,7 @@
     let filterText        = "";
     let activeJourneyFilter = "lifestyle"; // tracks TD panel journey type select
     let visibleTestCases  = []; // set by renderTree() — used by Run All
+    let journeyConditions = {}; // flowId → [{conditionId, title}] for current pharmacy
 
     // Multi-run state
     const runs   = new Map(); // runId → { label, status, logs[], artifacts, startTime, es, elapsedTimer, videoUrls[] }
@@ -1219,11 +1250,55 @@
       }
     }
 
+    // ── Journey condition load ─────────────────────────────────────────────────
+    async function loadJourneyConditions(pharmacyName) {
+      const requested = pharmacyName;
+      journeyConditions = {};
+      try {
+        const res = await fetch(`/api/journey-conditions?pharmacyName=${encodeURIComponent(pharmacyName)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (currentPharmacy !== requested) return; // stale response — pharmacy changed
+        journeyConditions = data;
+        updateConditionSelects();
+      } catch (e) {
+        if (currentPharmacy === requested) updateConditionSelects(/* error */true);
+        console.warn("Could not load journey conditions:", e.message);
+      }
+    }
+
+    function updateConditionSelects(error = false) {
+      document.querySelectorAll(".uj-condition-row").forEach(row => {
+        const flowId = row.dataset.flowId;
+        const conditions = journeyConditions[flowId] || [];
+        const select = row.querySelector(".uj-cond-select");
+        if (!select) return;
+        const prevVal = select.value;
+        select.innerHTML = "";
+        if (error || conditions.length === 0) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = error ? "Could not load conditions" : "No conditions found";
+          select.appendChild(opt);
+        } else {
+          conditions.forEach(c => {
+            const opt = document.createElement("option");
+            opt.value = c.conditionId;
+            opt.textContent = c.title;
+            select.appendChild(opt);
+          });
+          if (prevVal) select.value = prevVal; // restore selection if still available
+        }
+      });
+    }
+
     pharmacySel.addEventListener("change", () => {
       const name = pharmacySel.value;
       if (!name) { treeEl.innerHTML = '<div class="empty-state">Select a pharmacy to load tests</div>'; btnRunAll.disabled = true; return; }
       currentPharmacy = name;
+      journeyConditions = {}; // clear stale conditions immediately
       loadTests(name);
+      loadJourneyConditions(name);
     });
 
     // ── Test list load ─────────────────────────────────────────────────────────
@@ -1345,6 +1420,13 @@
       if (runBtn) {
         runBtn.addEventListener("click", e => {
           e.stopPropagation();
+          let ujConditionId = null;
+          if (testCase.journey === "user_journey") {
+            const condRow = div.parentElement?.querySelector(".uj-condition-row");
+            if (condRow && condRow.dataset.mode === "pinned") {
+              ujConditionId = condRow.querySelector(".uj-cond-select")?.value || null;
+            }
+          }
           queueRun({
             file: runnable.file,
             line: runnable.line,
@@ -1352,6 +1434,7 @@
             label: `${testCase.id} ${testCase.title}`,
             journey: testCase.journey,
             _tdOverrides: btoa(JSON.stringify(tdCollectForm())),
+            ujConditionId,
           });
         });
       }
@@ -1360,7 +1443,61 @@
         document.querySelectorAll(".tree-test").forEach(n => n.classList.remove("active"));
         div.classList.add("active");
       });
-      return div;
+
+      // For user_journey tests: wrap with condition selector row
+      if (testCase.journey !== "user_journey") return div;
+      const flowMatch = /^(F\d+):/.exec(testCase.title);
+      if (!flowMatch) return div;
+
+      const flowId = flowMatch[1];
+      const wrapper = document.createElement("div");
+      wrapper.className = "uj-wrapper";
+      wrapper.appendChild(div);
+
+      const condRow = document.createElement("div");
+      condRow.className = "uj-condition-row";
+      condRow.dataset.flowId = flowId;
+      condRow.dataset.mode = "auto";
+
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "uj-mode-toggle";
+      toggle.textContent = "🎲 Auto";
+      toggle.title = "Click to pin a specific condition for this flow";
+
+      const select = document.createElement("select");
+      select.className = "uj-cond-select";
+      select.id = `cond-select-${flowId}`;
+      select.disabled = true;
+
+      const conditions = journeyConditions[flowId] || [];
+      if (conditions.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = Object.keys(journeyConditions).length === 0 ? "Loading…" : "No conditions found";
+        select.appendChild(opt);
+      } else {
+        conditions.forEach(c => {
+          const opt = document.createElement("option");
+          opt.value = c.conditionId;
+          opt.textContent = c.title;
+          select.appendChild(opt);
+        });
+      }
+
+      toggle.addEventListener("click", e => {
+        e.stopPropagation();
+        const nowPinned = condRow.dataset.mode !== "pinned";
+        condRow.dataset.mode = nowPinned ? "pinned" : "auto";
+        toggle.textContent = nowPinned ? "🔖 Pinned" : "🎲 Auto";
+        toggle.classList.toggle("pinned", nowPinned);
+        select.disabled = !nowPinned;
+      });
+
+      condRow.appendChild(toggle);
+      condRow.appendChild(select);
+      wrapper.appendChild(condRow);
+      return wrapper;
     }
 
     searchEl.addEventListener("input", () => { filterText = searchEl.value; renderTree(allTests); updateRunAllBtn(); });
@@ -1599,7 +1736,7 @@
       pharmacySel.title = busy ? "Cannot change pharmacy while tests are running or queued" : "Select pharmacy";
     }
 
-    async function queueRun({ file, line, grep, label, journey, _tdOverrides } = {}) {
+    async function queueRun({ file, line, grep, label, journey, _tdOverrides, ujConditionId } = {}) {
       if (!currentPharmacy) { alert("Select a pharmacy first."); return; }
 
       const runJourney = journey || activeJourneyFilter;
@@ -1612,8 +1749,13 @@
       const key = grep ? `test:${grep}` : file ? `file:${file}` : null;
       if (key && queuedKeys.has(key)) return;
 
-      // Collect test data overrides (browser-only — applied temporarily on server during the run)
-      const tdOverrides = _tdOverrides !== undefined ? _tdOverrides : btoa(JSON.stringify(tdCollectForm()));
+      // Collect test data overrides, merging ujConditionId when pinned
+      const tdBase = (() => {
+        try { return _tdOverrides !== undefined ? JSON.parse(atob(_tdOverrides)) : tdCollectForm(); }
+        catch (_) { return tdCollectForm(); }
+      })();
+      if (ujConditionId) tdBase.ujConditionId = ujConditionId;
+      const tdOverrides = btoa(JSON.stringify(tdBase));
 
       const runId    = `run-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const runLabel = label || (file ? file.split("/").pop() : "All tests");

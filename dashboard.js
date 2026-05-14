@@ -2,6 +2,7 @@ const express = require("express");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const https = require("https");
 
 const app = express();
 app.use(express.json());
@@ -110,6 +111,48 @@ const FLOW_CONFIGS = [
   { name: "Private — specific date, new card",      group: "Private", conditionJourneyType: "private" },
   { name: "Private — specific date, saved card",    group: "Private", conditionJourneyType: "private" },
 ];
+
+// ── Journey flows (mirrors journey-flows.ts — JS copy for dashboard) ─────────
+const JOURNEY_FLOWS_JS = [
+  { id: "F1", pattern: ["sign_up", "questionnaire_submit", "appointment_booking"] },
+  { id: "F2", pattern: ["questionnaire_submit", "sign_up", "appointment_booking"] },
+  { id: "F3", pattern: ["questionnaire_submit", "appointment_booking", "sign_up"] },
+  { id: "F4", pattern: ["sign_up", "appointment_booking"] },
+  { id: "F5", pattern: ["appointment_booking", "sign_up"] },
+];
+
+function normaliseUserJourneyFlow(raw) {
+  if (!raw || typeof raw !== "object") return [];
+  if (Array.isArray(raw)) return raw;
+  return Object.keys(raw).sort((a, b) => Number(a) - Number(b)).map(k => raw[k]);
+}
+
+function arraysEqual(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function fetchSanityConditions(projectId) {
+  const query = `*[_type == 'singleCondition' && conditionLogStatus != 'disabled' && status != 'disabled']{userJourneyFlow, title, conditionId, corporateId, isNHS, isPreConsult}`;
+  const url = `https://${projectId}.api.sanity.io/v2026-05-13/data/query/dev?query=${encodeURIComponent(query)}&perspective=drafts`;
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { Accept: "application/json" } }, (res) => {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        res.resume();
+        return reject(new Error(`Sanity returned HTTP ${res.statusCode}`));
+      }
+      let data = "";
+      res.on("data", c => (data += c));
+      res.on("end", () => {
+        try { resolve(JSON.parse(data).result || []); }
+        catch (e) { reject(new Error(`Sanity parse error: ${e.message}`)); }
+      });
+    });
+    req.setTimeout(10000, () => { req.destroy(); reject(new Error("Sanity request timed out")); });
+    req.on("error", reject);
+  });
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -325,6 +368,28 @@ app.get("/api/flow-configs", (_req, res) => {
   res.json(FLOW_CONFIGS);
 });
 
+app.get("/api/journey-conditions", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const { pharmacyName } = req.query;
+  if (!pharmacyName) return res.status(400).json({ error: "pharmacyName required" });
+  const pharmacies = readPharmacies();
+  const pharmacy = pharmacies.find(p => p.name === pharmacyName);
+  if (!pharmacy) return res.status(404).json({ error: "Pharmacy not found" });
+  if (!pharmacy.sanityProjectId) return res.json({ F1: [], F2: [], F3: [], F4: [], F5: [] });
+  try {
+    const conditions = await fetchSanityConditions(pharmacy.sanityProjectId);
+    const result = {};
+    for (const flow of JOURNEY_FLOWS_JS) {
+      result[flow.id] = conditions
+        .filter(c => arraysEqual(normaliseUserJourneyFlow(c.userJourneyFlow), flow.pattern))
+        .map(c => ({ conditionId: c.conditionId, title: c.title }));
+    }
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get("/api/pharmacies", (_req, res) => {
   // No-store prevents Codespaces proxy and browsers from caching stale [] responses
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -421,6 +486,7 @@ app.get("/api/run-tests", (req, res) => {
       set("TD_SHIP_POSTCODE",       sh.postalCode);
       set("TD_SHIP_ADDRESS_ACTION", sh.addressAction);
       set("TD_PAYMENT_METHOD",      sh.paymentMethod);
+      set("USER_JOURNEY_CONDITION_ID", td.ujConditionId);
       const overrideCount = Object.keys(tdEnv).length;
       if (overrideCount > 0) {
         const summary = Object.entries(tdEnv)
@@ -436,14 +502,16 @@ app.get("/api/run-tests", (req, res) => {
   const runOutputDir = path.join(__dirname, "test-results", `run-${runId}`);
   const args = ["playwright", "test", "--reporter=list", `--output=${runOutputDir}`];
   if (project) args.push(`--project=${project}`);
-  // Prefer file:line targeting when available. Always apply grep on top if provided
-  // (grep is essential for loop-generated tests that share the same line number).
+  // When grep is present it uniquely identifies the test; file:line is redundant and
+  // fragile (cached line numbers go stale after spec edits). Use just the file in that
+  // case. Only fall back to file:line targeting when there is no grep pattern.
   if (file) {
-    args.push(line ? `${file}:${line}` : file);
+    args.push(grepArg ? file : line ? `${file}:${line}` : file);
     if (grepArg) args.push("--grep", grepArg);
   } else if (grepArg) {
     args.push("--grep", grepArg);
   }
+  send("log", `⚙ Running: npx ${args.join(" ")}`);
 
   const proc = spawn("npx", args, {
     cwd: __dirname,

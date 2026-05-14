@@ -306,6 +306,35 @@
       .tree-test .tc-info { flex: 1; min-width: 0; }
       .tree-test .tc-title { font-size: 12px; color: var(--clr-txt); font-weight: 500; line-height: 1.4; }
       .tree-test .tc-cat { font-size: 10px; color: var(--clr-txt-muted); margin-top: 2px; }
+      .tree-test .tc-actions {
+        display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+      }
+      .tree-test .tc-info-icon {
+        position: relative;
+        width: 16px; height: 16px; border-radius: 50%;
+        border: 1px solid var(--clr-border-drk);
+        color: var(--clr-accent);
+        font-size: 10px; font-weight: 700; line-height: 1;
+        display: inline-flex; align-items: center; justify-content: center;
+        cursor: help; flex-shrink: 0;
+        background: var(--clr-surface);
+      }
+      .tree-test .tc-info-icon::after {
+        content: attr(data-tooltip);
+        position: absolute; right: 0; top: calc(100% + 8px);
+        width: min(320px, 60vw);
+        padding: 8px 10px; border-radius: 6px;
+        background: var(--clr-log); color: var(--clr-txt-log);
+        border: 1px solid var(--clr-border-drk);
+        box-shadow: var(--shadow-sm);
+        font-size: 11px; line-height: 1.4; font-weight: 500;
+        opacity: 0; pointer-events: none; z-index: 20;
+        white-space: normal;
+      }
+      .tree-test .tc-info-icon:hover::after,
+      .tree-test .tc-info-icon:focus-visible::after {
+        opacity: 1;
+      }
 
       .run-test-btn {
         opacity: 0; font-size: 10px; padding: 2px 8px;
@@ -982,10 +1011,63 @@
       return `TC-${String(index + 1).padStart(3, "0")}`;
     }
 
+    function escapeHtml(text) {
+      return String(text ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
     function deriveCategory(fullTitle, file) {
       const normalized = (fullTitle || "").split(" > ").slice(0, -1).join(" > ").trim();
       if (normalized) return normalized;
       return (file || "").split("/").pop() || "General Flow";
+    }
+
+    function deriveTestDescription(testCase) {
+      const title = String(testCase?.title || "").trim();
+      const category = String(testCase?.category || "").trim();
+      const journeyLabel = JOURNEY_LABELS[testCase?.journey] || "General";
+      const file = String(testCase?.runnable?.file || "");
+
+      const idLabel = title.match(/^([A-Z]{1,3}\d+):/i)?.[1]?.toUpperCase() || "";
+      const afterColon = title.includes(":") ? title.split(":").slice(1).join(":").trim() : title;
+
+      if (/^F\d+$/i.test(idLabel)) {
+        return `${idLabel} user journey flow: validates the execution order ${afterColon}.`;
+      }
+      if (/^B\d+$/i.test(idLabel)) {
+        return `${idLabel} booking flow scenario: verifies ${afterColon} while completing the end-to-end appointment journey.`;
+      }
+      if (/^P\d+$/i.test(idLabel)) {
+        return `${idLabel} payment flow scenario: verifies ${afterColon} after reaching checkout through the booking journey.`;
+      }
+      if (/^CR\d+$/i.test(idLabel)) {
+        return `${idLabel} condition-rules scenario: validates rule-driven questionnaire behavior for ${afterColon}.`;
+      }
+      if (/^TC-\d+$/i.test(idLabel)) {
+        return `${idLabel} eligibility scenario: ${afterColon}.`;
+      }
+
+      if (/user-journey-flows\.spec\.ts$/i.test(file)) {
+        return `User journey validation: ${afterColon || title}.`;
+      }
+      if (/booking-flows\.spec\.ts$/i.test(file)) {
+        return `Booking scenario validation: ${afterColon || title}.`;
+      }
+      if (/payment-flows\.spec\.ts$/i.test(file)) {
+        return `Payment scenario validation: ${afterColon || title}.`;
+      }
+      if (/condition-rules-flows\.spec\.ts$/i.test(file)) {
+        return `Condition-rules validation: ${afterColon || title}.`;
+      }
+      if (/eligibility\.spec\.ts$/i.test(file)) {
+        return `Eligibility validation: ${afterColon || title}.`;
+      }
+
+      return `${journeyLabel} test case: ${afterColon || title || category || "Validates expected behavior for this flow."}`;
     }
 
     function syncJourneyFilter(value) {
@@ -1240,17 +1322,24 @@
 
     function functionalCaseNode(testCase) {
       const runnable = testCase.runnable;
+      const description = deriveTestDescription(testCase);
+      const safeTitle = escapeHtml(testCase.title);
+      const safeCategory = escapeHtml(testCase.category);
+      const safeDescription = escapeHtml(description);
       const div = document.createElement("div");
       div.className = "tree-test";
       div.innerHTML = `
         <div class="tc-id">${testCase.id}</div>
         <div class="tc-info">
-          <div class="tc-title">${testCase.title}</div>
-          <div class="tc-cat">${testCase.category}</div>
+          <div class="tc-title">${safeTitle}</div>
+          <div class="tc-cat">${safeCategory}</div>
         </div>
-        ${runnable
-          ? `<button class="run-test-btn" data-key="test:${runnable.fullTitle || runnable.title}" title="Run this test case">▶</button>`
-          : `<span class="run-test-btn" style="visibility:hidden"></span>`}
+        <div class="tc-actions">
+          ${runnable
+            ? `<button class="run-test-btn" data-key="test:${runnable.fullTitle || runnable.title}" title="Run this test case">▶</button>`
+            : `<span class="run-test-btn" style="visibility:hidden"></span>`}
+          <span class="tc-info-icon" tabindex="0" role="img" aria-label="Test case description" data-tooltip="${safeDescription}">i</span>
+        </div>
       `;
       const runBtn = div.querySelector(".run-test-btn");
       if (runBtn) {

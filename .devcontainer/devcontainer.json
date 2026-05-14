@@ -8,11 +8,13 @@
   "portsAttributes": {
     "7890": {
       "label": "Dashboard",
-      "onAutoForward": "openBrowser"
+      "onAutoForward": "openBrowser",
+      "visibility": "public"
     },
     "8080": {
       "label": "Playwright UI",
-      "onAutoForward": "notify"
+      "onAutoForward": "notify",
+      "visibility": "public"
     }
   },
   "postCreateCommand": "npm install && npx playwright install --with-deps chromium && npm install -g pm2",

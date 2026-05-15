@@ -551,11 +551,32 @@ app.get("/api/run-tests", (req, res) => {
     }
   }, MAX_RUN_MS);
 
+  // Strip ANSI colour/style escape codes (e.g. ␛[32m, ␛[2m) from log lines.
+  const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]/g;
+  function stripAnsi(line) {
+    return line.replace(ANSI_RE, "");
+  }
+
+  // Lines from Playwright's failure output that are redundant noise in the
+  // dashboard log stream (traces/artifacts are surfaced via the artifacts panel).
+  function isNoisyLine(line) {
+    const t = line.trim();
+    return (
+      /^Error Context:\s+test-results\//i.test(t) ||
+      /^attachment\s+#\d+:/i.test(t) ||
+      /^test-results\/run-run-/i.test(t) ||
+      /^Usage:$/i.test(t) ||
+      /playwright show-trace/i.test(t) ||
+      /^─{8,}/.test(t)
+    );
+  }
+
   proc.stdout.on("data", (chunk) => {
     const text = chunk.toString();
     stdout += text;
     text.split("\n").forEach((line) => {
-      if (line.trim()) send("log", line);
+      const clean = stripAnsi(line);
+      if (clean.trim() && !isNoisyLine(clean)) send("log", clean);
     });
   });
 
@@ -563,7 +584,8 @@ app.get("/api/run-tests", (req, res) => {
     const text = chunk.toString();
     stderr += text;
     text.split("\n").forEach((line) => {
-      if (line.trim()) send("log", line);
+      const clean = stripAnsi(line);
+      if (clean.trim() && !isNoisyLine(clean)) send("log", clean);
     });
   });
 

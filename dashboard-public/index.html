@@ -337,17 +337,27 @@
       }
 
       .run-test-btn {
-        opacity: 0; font-size: 10px; padding: 2px 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 20px;
+        width: 20px;
+        opacity: 0; font-size: 10px; padding: 2px ;
         border-radius: 4px;
         border: 1px solid var(--clr-accent);
         color: var(--clr-accent);
         background: transparent; cursor: pointer;
-        transition: opacity var(--transition), background var(--transition);
+        transition: opacity var(--transition), background var(--transition), border-color var(--transition);
         flex-shrink: 0; font-family: inherit;
       }
       .tree-test:hover .run-test-btn { opacity: 1; }
       .run-test-btn:hover { background: var(--clr-accent); color: #fff; }
       .tree-test:hover .run-test-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+      .run-test-btn.stop-mode {
+        background: var(--clr-fail) !important; color: #fff !important;
+        border: none !important; opacity: 1 !important; cursor: pointer;
+      }
+      .tree-test .run-test-btn.stop-mode { opacity: 1 !important; }
 
       .empty-state {
         padding: 48px 20px; text-align: center;
@@ -389,8 +399,9 @@
       .rc-dot.running { background: var(--clr-running); animation: pulse 1.2s infinite; box-shadow: 0 0 6px var(--clr-running); }
       .rc-dot.pass    { background: var(--clr-pass); box-shadow: 0 0 5px rgba(16,217,138,0.5); }
       .rc-dot.fail    { background: var(--clr-fail); box-shadow: 0 0 5px rgba(245,88,90,0.5); }
-      .rc-dot.stopped { background: var(--clr-txt-dim); }
-      .rc-dot.queued  { background: var(--clr-skip); animation: pulse 2s infinite; }
+      .rc-dot.stopped  { background: var(--clr-txt-dim); }
+      .rc-dot.canceled { background: #f59e0b; }
+      .rc-dot.queued   { background: var(--clr-skip); animation: pulse 2s infinite; }
 
       .rc-info { flex: 1; min-width: 0; }
       .rc-label { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--clr-txt); font-weight: 500; }
@@ -407,10 +418,11 @@
       .rc-dequeue:hover { border-color: var(--clr-fail); color: var(--clr-fail); }
 
       .rc-stop, .rc-video-btn {
-        width: 22px; height: 22px; border-radius: 4px; border: none;
+        width: 20px; height: 20px; border-radius: 4px; border: none;
         cursor: pointer; font-size: 10px; flex-shrink: 0;
         display: flex; align-items: center; justify-content: center;
         transition: opacity var(--transition);
+        font-family: inherit;
       }
       .rc-stop      { background: var(--clr-fail); color: #fff; }
       .rc-video-btn { background: var(--clr-pass); color: #fff; }
@@ -1011,6 +1023,7 @@
     const tdInputs = () => document.querySelectorAll("#testdata-panel .td-input, #testdata-panel .td-select");
 
     const JOURNEY_LABELS = {
+      seo_health: "SEO HEALTH",
       nhs: "NHS",
       private: "PRIVATE",
       lifestyle: "LIFESTYLE",
@@ -1022,6 +1035,7 @@
     };
 
     const JOURNEY_SUITE_FILES = {
+      seo_health: "tests/e2e/seo-sitemap.spec.ts",
       nhs: "tests/e2e/nhs-flows.spec.ts",
       private: "tests/e2e/private-flows.spec.ts",
       lifestyle: "tests/e2e/condition-flow.spec.ts",
@@ -1035,6 +1049,7 @@
     function getJourneyFromTest(testItem) {
       const file = (testItem.file || "").toLowerCase();
       const title = `${testItem.fullTitle || ""} ${testItem.title || ""}`.toLowerCase();
+      if (file.includes("seo-sitemap.spec")) return "seo_health";
       if (file.includes("eligibility.spec")) return "eligibility";
       if (file.includes("user-journey-flows.spec")) return "user_journey";
       if (file.includes("booking-flows.spec")) return "booking";
@@ -1337,8 +1352,8 @@
       treeEl.innerHTML = "";
       visibleTestCases = [];
 
-      const journeyOrder = ["nhs", "private", "lifestyle", "eligibility", "user_journey", "condition_rules", "booking", "payment"];
-      const journeyEmojis = { nhs: "🏥", private: "💊", lifestyle: "🌱", eligibility: "✅", user_journey: "🧭", condition_rules: "📋", booking: "📅", payment: "💳" };
+      const journeyOrder = ["seo_health","nhs", "private", "lifestyle", "eligibility", "user_journey", "condition_rules", "booking", "payment"];
+      const journeyEmojis = { seo_health: "🔍", nhs: "🏥", private: "💊", lifestyle: "🌱", eligibility: "✅", user_journey: "🧭", condition_rules: "📋", booking: "📅", payment: "💳" };
 
       // Assign global IDs to all tests
       const allCases = tests.map((t, idx) => ({
@@ -1482,6 +1497,12 @@
       if (runBtn) {
         runBtn.addEventListener("click", e => {
           e.stopPropagation();
+          // When in stop-mode the button cancels/stops the associated run
+          if (runBtn.classList.contains("stop-mode")) {
+            const sid = runBtn.dataset.stopRunId;
+            if (sid) stopRun(sid);
+            return;
+          }
           let ujConditionId = null;
           if (isUJ) {
             const condRow = div.querySelector(".tc-cond-row");
@@ -1590,7 +1611,7 @@
         const lbl = document.createElement("div");
         lbl.className = "rc-elapsed";
         lbl.style.color = "var(--clr-txt-dim)";
-        lbl.textContent = "Canceled";
+        lbl.textContent = run.status === "canceled" ? "Canceled" : "Stopped";
         queuePos.replaceWith(lbl);
       }
 
@@ -1644,6 +1665,13 @@
         stopBtn.textContent = "■";
         stopBtn.addEventListener("click", e => { e.stopPropagation(); stopRun(runId); });
         deqBtn.replaceWith(stopBtn);
+      }
+      // Update the run-test-btn in the tree if it's in stop-mode
+      if (run.queueKey) {
+        const treeBtn = document.querySelector(`[data-key="${CSS.escape(run.queueKey)}"]`);
+        if (treeBtn && treeBtn.classList.contains("stop-mode")) {
+          treeBtn.title = "Stop this run";
+        }
       }
       run.elapsedTimer = setInterval(() => {
         const el = card.querySelector(".rc-elapsed");
@@ -1733,10 +1761,23 @@
     vidNext.addEventListener("click", () => { if (videoIndex < allVideos.length - 1) showVideoAt(videoIndex + 1); });
 
     // ── Run ────────────────────────────────────────────────────────────────────
-    function setRunBtnQueued(key, disabled) {
+    function setRunBtnQueued(key, active, runId = null) {
       if (!key) return;
       const btn = document.querySelector(`[data-key="${CSS.escape(key)}"]`);
-      if (btn) btn.disabled = disabled;
+      if (!btn || btn.tagName !== "BUTTON") return;
+      if (active) {
+        btn.disabled = false;
+        btn.classList.add("stop-mode");
+        btn.textContent = "■";
+        btn.title = "Cancel (remove from queue)";
+        if (runId) btn.dataset.stopRunId = runId;
+      } else {
+        btn.disabled = false;
+        btn.classList.remove("stop-mode");
+        btn.textContent = "▶";
+        btn.title = "Run this test case";
+        delete btn.dataset.stopRunId;
+      }
     }
 
     function updatePharmacyLock() {
@@ -1771,7 +1812,7 @@
 
       if (key) {
         queuedKeys.add(key);
-        setRunBtnQueued(key, true);
+        setRunBtnQueued(key, true, runId);
       }
 
       runs.set(runId, {
@@ -1882,14 +1923,14 @@
       const run = runs.get(runId);
       if (!run) return;
 
-      // If queued but not yet running — just remove from queue
+      // If queued but not yet running — remove from queue and mark canceled
       if (run.status === "queued") {
         const idx = runQueue.findIndex(j => j.runId === runId);
         const key = idx >= 0 ? runQueue[idx].key : run.queueKey;
         if (idx >= 0) runQueue.splice(idx, 1);
         if (key) { queuedKeys.delete(key); setRunBtnQueued(key, false); }
-        run.status = "stopped";
-        addRunLog(runId, "Dequeued by user.", "log-warn");
+        run.status = "canceled";
+        addRunLog(runId, "Removed from queue.", "log-warn");
         updateRunCard(runId);
         updateQueuePositions();
         updateGlobalStatus();
@@ -1958,8 +1999,8 @@
       for (const id of pendingIds) {
         const r = runs.get(id);
         if (r) {
-          r.status = "stopped";
-          addRunLog(id, "Dequeued (global stop).", "log-warn");
+          r.status = "canceled";
+          addRunLog(id, "Removed from queue (global stop).", "log-warn");
           updateRunCard(id);
         }
       }
@@ -1967,7 +2008,13 @@
       const running = [...runs.entries()].filter(([, r]) => r.status === "running");
       for (const [id] of running) await stopRun(id);
       queuedKeys.clear();
-      document.querySelectorAll("[data-key]").forEach(b => { b.disabled = false; });
+      document.querySelectorAll("[data-key]").forEach(b => {
+        b.disabled = false;
+        b.classList.remove("stop-mode");
+        b.textContent = "▶";
+        b.title = "Run this test case";
+        delete b.dataset.stopRunId;
+      });
       queueRunning = false;
       updateGlobalStatus();
       updatePharmacyLock();

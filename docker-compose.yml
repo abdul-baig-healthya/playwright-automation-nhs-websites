@@ -1,0 +1,16 @@
+services:
+  dashboard:
+    build: .
+    ports:
+      - "7890:7890"
+    volumes:
+      # Persist test artifacts on the host
+      - ./test-results:/app/test-results
+      - ./playwright-report:/app/playwright-report
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    # Required for Chromium in Docker
+    security_opt:
+      - seccomp:unconfined
+    shm_size: 1gb

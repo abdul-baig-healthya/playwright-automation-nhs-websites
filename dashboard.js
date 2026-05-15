@@ -134,9 +134,23 @@ function arraysEqual(a, b) {
 }
 
 function fetchSanityConditions(projectId) {
-  const query = `*[_type == 'singleCondition' && conditionLogStatus != 'disabled' && status != 'disabled']{userJourneyFlow, title, conditionId, corporateId, "isPreConsult":categoryType == 'pre_consult',
-    "isNHS": categoryType == 'pre_consult' && services == 'NHS'}`;
+  const query = `
+    *[
+      _type == 'singleCondition' && 
+      conditionLogStatus != 'disabled' && 
+      status != 'disabled' && 
+      categoryType == 'pre_consult'
+    ]{
+      userJourneyFlow, 
+      title, 
+      conditionId, 
+      corporateId, 
+      categoryType,
+      "isNHS": categoryType == 'pre_consult' && services == 'NHS'
+    }
+  `;
   const url = `https://${projectId}.api.sanity.io/v2026-05-13/data/query/dev?query=${encodeURIComponent(query)}&perspective=drafts`;
+  // console.log(`Fetching conditions from Sanity project ${projectId}...`,url);
   return new Promise((resolve, reject) => {
     const req = https.get(url, { headers: { Accept: "application/json" } }, (res) => {
       if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -379,6 +393,7 @@ app.get("/api/journey-conditions", async (req, res) => {
   if (!pharmacy.sanityProjectId) return res.json({ F1: [], F2: [], F3: [], F4: [], F5: [] });
   try {
     const conditions = await fetchSanityConditions(pharmacy.sanityProjectId);
+// console.log(`Fetched ${conditions.length} conditions from Sanity for project ${pharmacy.sanityProjectId}`,conditions);
     const result = {};
     for (const flow of JOURNEY_FLOWS_JS) {
       result[flow.id] = conditions

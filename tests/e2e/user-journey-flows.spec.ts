@@ -19,13 +19,13 @@ function buildFlowConfig(
   flowId: string,
   condition: SanityCondition,
 ): FlowConfig {
-  // isPreConsult=false → /lifestyle-treatments; isNHS=true → nhs; else → private
-  const conditionJourneyType: "nhs" | "private" | "lifestyle" =
-    condition.isPreConsult === false
-      ? "lifestyle"
-      : condition.isNHS === true
-        ? "nhs"
-        : "private";
+  // Query is filtered to categoryType == 'pre_consult' only, so every condition
+  // is a pre-consult condition. Journey type is determined by NHS flag alone.
+  /** @future-lifestyle: when lifestyle conditions are re-enabled, restore this:
+   * condition.isPreConsult === false ? "lifestyle" : condition.isNHS === true ? "nhs" : "private"
+   */
+  const conditionJourneyType: "nhs" | "private" =
+    condition.isNHS === true ? "nhs" : "private";
 
   return {
     name: `User Journey ${flowId}`,
@@ -49,7 +49,8 @@ function isConditionNotFoundError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return (
     /not found on \/conditions/i.test(msg) ||
-    /not found on \/lifestyle-treatments/i.test(msg) ||
+    /** @future-lifestyle: re-enable when lifestyle conditions are queried again.
+     * /not found on \/lifestyle-treatments/i.test(msg) || */
     /Flow reached a dead-end/i.test(msg) ||
     /Condition detail page did not reach a ready state/i.test(msg) ||
     /Appointment type .* not available/i.test(msg) ||
@@ -122,11 +123,11 @@ test.describe("User Journey Flows", () => {
             attempts.push({ title: condition.title, error: msg });
             const reason = /dead-end/i.test(msg)
               ? "dead-end (self-care/referral)"
-              : /lifestyle-treatments/i.test(msg)
-                ? "not on /lifestyle-treatments"
-                : /ready state/i.test(msg)
-                  ? "detail page didn't load (wrong UI or app error)"
-                  : "not on /conditions";
+              /** @future-lifestyle: re-enable when lifestyle conditions are queried again.
+               * : /lifestyle-treatments/i.test(msg) ? "not on /lifestyle-treatments" */
+              : /ready state/i.test(msg)
+                ? "detail page didn't load (wrong UI or app error)"
+                : "not on /conditions";
             const detail = msg.split("\n")[0].slice(0, 120);
             console.log(
               `↻ Condition "${condition.title}" skipped (${reason}): ${detail}`,

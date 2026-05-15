@@ -695,33 +695,43 @@
         #viewport { height: 160px; }
       }
       /* ── User Journey condition selector ─────────────────────────────── */
-      .uj-wrapper { display: block; }
-      .uj-condition-row {
-        display: flex; align-items: center; gap: 8px;
-        padding: 4px 14px 7px 14px;
-        border-bottom: 1px solid var(--clr-border);
+      .tree-test.uj-test {
+        flex-direction: column;
+        gap: 0;
+        padding-bottom: 8px;
+      }
+      .tree-test .tc-main-row {
+        display: flex; align-items: flex-start; gap: 10px;
+        width: 100%;
+      }
+      .tc-cond-row {
+        display: flex; align-items: center; gap: 6px;
+        width: 100%;
+        margin-top: 4px;
+        /* padding-left: 36px; */
       }
       .uj-mode-toggle {
-        min-width:65px;
+        flex-shrink: 0;
         font-size: 10px; font-weight: 600; white-space: nowrap;
-        padding: 2px 7px; border-radius: 4px;
+        padding: 2px 8px; border-radius: 4px;
         border: 1px solid var(--clr-border-drk);
         background: var(--clr-surface); color: var(--clr-txt-muted);
         cursor: pointer; font-family: inherit;
         transition: border-color 0.15s, color 0.15s, background 0.15s;
       }
-      .uj-mode-toggle.pinned { border-color: var(--clr-accent); color: var(--clr-accent); }
+      .uj-mode-toggle.pinned { border-color: var(--clr-accent); color: var(--clr-accent); background: var(--clr-active); }
       .uj-mode-toggle:hover { border-color: var(--clr-accent); color: var(--clr-accent); }
       .uj-cond-select {
-        max-width: calc(100% - 28px - 65px);
-        flex: 1; font-size: 11px; font-family: inherit; height: 24px;
+        flex: 1; min-width: 0;
+        font-size: 11px; font-family: inherit; height: 24px;
         padding: 0 6px; border-radius: 4px;
         border: 1px solid var(--clr-border-drk);
         background: var(--clr-surface); color: var(--clr-txt);
         outline: none;
-        transition: border-color 0.15s, opacity 0.15s;
+        display: none;
+        transition: border-color 0.15s;
       }
-      .uj-cond-select:disabled { opacity: 0.4; cursor: not-allowed; }
+      .tc-cond-row[data-mode="pinned"] .uj-cond-select { display: block; }
       .uj-cond-select:focus { border-color: var(--clr-accent); }
 
     </style>
@@ -1268,7 +1278,7 @@
     }
 
     function updateConditionSelects(error = false) {
-      document.querySelectorAll(".uj-condition-row").forEach(row => {
+      document.querySelectorAll(".tc-cond-row").forEach(row => {
         const flowId = row.dataset.flowId;
         const conditions = journeyConditions[flowId] || [];
         const select = row.querySelector(".uj-cond-select");
@@ -1401,28 +1411,80 @@
       const safeTitle = escapeHtml(testCase.title);
       const safeCategory = escapeHtml(testCase.category);
       const safeDescription = escapeHtml(description);
+      const isUJ = testCase.journey === "user_journey";
+      const flowMatch = isUJ ? /^(F\d+):/.exec(testCase.title) : null;
+      const flowId = flowMatch?.[1] ?? null;
+
       const div = document.createElement("div");
-      div.className = "tree-test";
+      div.className = isUJ && flowId ? "tree-test uj-test" : "tree-test";
       div.innerHTML = `
-        <div class="tc-id">${testCase.id}</div>
-        <div class="tc-info">
-          <div class="tc-title">${safeTitle}</div>
-          <div class="tc-cat">${safeCategory}</div>
-        </div>
-        <div class="tc-actions">
-          ${runnable
-            ? `<button class="run-test-btn" data-key="test:${runnable.fullTitle || runnable.title}" title="Run this test case">▶</button>`
-            : `<span class="run-test-btn" style="visibility:hidden"></span>`}
-          <span class="tc-info-icon" tabindex="0" role="img" aria-label="Test case description" data-tooltip="${safeDescription}">i</span>
+        <div class="tc-main-row">
+          <div class="tc-id">${testCase.id}</div>
+          <div class="tc-info">
+            <div class="tc-title">${safeTitle}</div>
+            <div class="tc-cat">${safeCategory}</div>
+          </div>
+          <div class="tc-actions">
+            ${runnable
+              ? `<button class="run-test-btn" data-key="test:${runnable.fullTitle || runnable.title}" title="Run this test case">▶</button>`
+              : `<span class="run-test-btn" style="visibility:hidden"></span>`}
+            <span class="tc-info-icon" tabindex="0" role="img" aria-label="Test case description" data-tooltip="${safeDescription}">i</span>
+          </div>
         </div>
       `;
+
+      // Inject condition selector inside the card for user_journey flows
+      if (isUJ && flowId) {
+        const condRow = document.createElement("div");
+        condRow.className = "tc-cond-row";
+        condRow.dataset.flowId = flowId;
+        condRow.dataset.mode = "auto";
+
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "uj-mode-toggle";
+        toggle.textContent = "🎲 Auto";
+        toggle.title = "Click to pin a specific condition for this flow";
+
+        const select = document.createElement("select");
+        select.className = "uj-cond-select";
+        select.id = `cond-select-${flowId}`;
+
+        const conditions = journeyConditions[flowId] || [];
+        if (conditions.length === 0) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = Object.keys(journeyConditions).length === 0 ? "Loading…" : "No conditions found";
+          select.appendChild(opt);
+        } else {
+          conditions.forEach(c => {
+            const opt = document.createElement("option");
+            opt.value = c.conditionId;
+            opt.textContent = c.title;
+            select.appendChild(opt);
+          });
+        }
+
+        toggle.addEventListener("click", e => {
+          e.stopPropagation();
+          const nowPinned = condRow.dataset.mode !== "pinned";
+          condRow.dataset.mode = nowPinned ? "pinned" : "auto";
+          toggle.textContent = nowPinned ? "📌 Pinned" : "🎲 Auto";
+          toggle.classList.toggle("pinned", nowPinned);
+        });
+
+        condRow.appendChild(toggle);
+        condRow.appendChild(select);
+        div.appendChild(condRow);
+      }
+
       const runBtn = div.querySelector(".run-test-btn");
       if (runBtn) {
         runBtn.addEventListener("click", e => {
           e.stopPropagation();
           let ujConditionId = null;
-          if (testCase.journey === "user_journey") {
-            const condRow = div.parentElement?.querySelector(".uj-condition-row");
+          if (isUJ) {
+            const condRow = div.querySelector(".tc-cond-row");
             if (condRow && condRow.dataset.mode === "pinned") {
               ujConditionId = condRow.querySelector(".uj-cond-select")?.value || null;
             }
@@ -1444,60 +1506,7 @@
         div.classList.add("active");
       });
 
-      // For user_journey tests: wrap with condition selector row
-      if (testCase.journey !== "user_journey") return div;
-      const flowMatch = /^(F\d+):/.exec(testCase.title);
-      if (!flowMatch) return div;
-
-      const flowId = flowMatch[1];
-      const wrapper = document.createElement("div");
-      wrapper.className = "uj-wrapper";
-      wrapper.appendChild(div);
-
-      const condRow = document.createElement("div");
-      condRow.className = "uj-condition-row";
-      condRow.dataset.flowId = flowId;
-      condRow.dataset.mode = "auto";
-
-      const toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.className = "uj-mode-toggle";
-      toggle.textContent = "🎲 Auto";
-      toggle.title = "Click to pin a specific condition for this flow";
-
-      const select = document.createElement("select");
-      select.className = "uj-cond-select";
-      select.id = `cond-select-${flowId}`;
-      select.disabled = true;
-
-      const conditions = journeyConditions[flowId] || [];
-      if (conditions.length === 0) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = Object.keys(journeyConditions).length === 0 ? "Loading…" : "No conditions found";
-        select.appendChild(opt);
-      } else {
-        conditions.forEach(c => {
-          const opt = document.createElement("option");
-          opt.value = c.conditionId;
-          opt.textContent = c.title;
-          select.appendChild(opt);
-        });
-      }
-
-      toggle.addEventListener("click", e => {
-        e.stopPropagation();
-        const nowPinned = condRow.dataset.mode !== "pinned";
-        condRow.dataset.mode = nowPinned ? "pinned" : "auto";
-        toggle.textContent = nowPinned ? "🔖 Pinned" : "🎲 Auto";
-        toggle.classList.toggle("pinned", nowPinned);
-        select.disabled = !nowPinned;
-      });
-
-      condRow.appendChild(toggle);
-      condRow.appendChild(select);
-      wrapper.appendChild(condRow);
-      return wrapper;
+      return div;
     }
 
     searchEl.addEventListener("input", () => { filterText = searchEl.value; renderTree(allTests); updateRunAllBtn(); });

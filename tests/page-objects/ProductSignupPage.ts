@@ -114,6 +114,8 @@ export class ProductSignupPage {
     email: string;
     password: string;
     confirmPassword: string;
+    confirmPhone?: string;
+    confirmEmail?: string;
   }): Promise<boolean> {
     const visible = await this.page
       .locator("text=/enter your contact details/i")
@@ -123,6 +125,9 @@ export class ProductSignupPage {
     if (!visible) return false;
 
     const normalizedPhone = this.normalizeUkPhoneForInput(data.phone);
+    const normalizedConfirmPhone = data.confirmPhone
+      ? this.normalizeUkPhoneForInput(data.confirmPhone)
+      : normalizedPhone;
 
     const phoneInput = this.page
       .locator('input[placeholder*="Enter your phone number" i], input.PhoneInputInput, input[type="tel"]')
@@ -137,7 +142,7 @@ export class ProductSignupPage {
     }
     if (await confirmPhoneInput.isVisible().catch(() => false)) {
       await confirmPhoneInput.fill("").catch(() => {});
-      await confirmPhoneInput.type(normalizedPhone, { delay: 35 }).catch(() => {});
+      await confirmPhoneInput.type(normalizedConfirmPhone, { delay: 35 }).catch(() => {});
     }
 
     const emailInput = this.page
@@ -159,7 +164,7 @@ export class ProductSignupPage {
     }
     if (await confirmEmailInput.isVisible().catch(() => false)) {
       await confirmEmailInput.fill("").catch(() => {});
-      await confirmEmailInput.fill(data.email).catch(() => {});
+      await confirmEmailInput.fill(data.confirmEmail || data.email).catch(() => {});
     }
     if (await passwordInput.isVisible().catch(() => false)) {
       await passwordInput.fill("").catch(() => {});
@@ -193,6 +198,8 @@ export class ProductSignupPage {
     email: string;
     password: string;
     confirmPassword: string;
+    confirmPhone?: string;
+    confirmEmail?: string;
   }): Promise<boolean> {
     if (!(await this.isVisible())) return false;
 
@@ -210,6 +217,8 @@ export class ProductSignupPage {
       email: data.email,
       password: data.password,
       confirmPassword: data.confirmPassword,
+      confirmPhone: data.confirmPhone,
+      confirmEmail: data.confirmEmail,
     });
 
     return handledPersonal || handledContact;

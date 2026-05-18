@@ -22,8 +22,10 @@ export const TEST_USER = {
   postcode:        _e.TD_POSTCODE          || "SW1A 1AA",
   genderValue:     _e.TD_GENDER            || "male",
   email:           _e.TD_EMAIL             || "lloyd.p2@yopmail.com",
+  confirmEmail:    _e.TD_CONFIRM_EMAIL     || _e.TD_EMAIL || "lloyd.p2@yopmail.com",
   guardianName:    _e.TD_GUARDIAN_NAME     || "Tonny stark",
   phone:           _e.TD_PHONE             || "447467059973",
+  confirmPhone:    _e.TD_CONFIRM_PHONE     || _e.TD_PHONE || "447467059973",
   password:        _e.TD_PASSWORD          || "Test@1234",
   confirmPassword: _e.TD_CONFIRM_PASSWORD  || "Test@1234",
   payment: {

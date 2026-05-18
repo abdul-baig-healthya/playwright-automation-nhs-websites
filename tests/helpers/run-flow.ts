@@ -540,6 +540,8 @@ async function runConditionFlowImpl(
             email: user.email,
             password: user.password,
             confirmPassword: user.confirmPassword,
+            confirmPhone: user.confirmPhone,
+            confirmEmail: user.confirmEmail,
           });
           break;
         }
@@ -603,7 +605,12 @@ async function runConditionFlowImpl(
             .catch(() => false);
 
           if (hasEmail) {
-            await signup.fillContactDetails(user.email, user.phone);
+            await signup.fillContactDetails(
+              user.email,
+              user.phone,
+              user.confirmEmail,
+              user.confirmPhone,
+            );
             await signup.submitAndBook();
             await page.waitForTimeout(3_000);
           }

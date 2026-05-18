@@ -29,6 +29,8 @@ export class SignupPage {
     email: string;
     password: string;
     confirmPassword: string;
+    confirmPhone?: string;
+    confirmEmail?: string;
   }): Promise<boolean> {
     const contactUi = await this.page
       .locator('text=/enter your contact details/i')
@@ -41,6 +43,8 @@ export class SignupPage {
         email: data.email,
         password: data.password,
         confirmPassword: data.confirmPassword,
+        confirmPhone: data.confirmPhone,
+        confirmEmail: data.confirmEmail,
       });
     }
 
@@ -170,6 +174,8 @@ export class SignupPage {
     email: string;
     password: string;
     confirmPassword: string;
+    confirmPhone?: string;
+    confirmEmail?: string;
   }): Promise<boolean> {
     const titleVisible = await this.page
       .locator('text=/enter your contact details/i')
@@ -180,6 +186,9 @@ export class SignupPage {
     if (!titleVisible) return false;
 
     const normalizedPhone = this.normalizeUkPhoneForInput(data.phone);
+    const normalizedConfirmPhone = data.confirmPhone
+      ? this.normalizeUkPhoneForInput(data.confirmPhone)
+      : normalizedPhone;
 
     const phoneInput = this.page
       .locator(
@@ -211,7 +220,7 @@ export class SignupPage {
     if (await confirmPhoneInput.isVisible().catch(() => false)) {
       await confirmPhoneInput.click({ force: true }).catch(() => {});
       await confirmPhoneInput.fill("").catch(() => {});
-      await confirmPhoneInput.type(normalizedPhone, { delay: 40 }).catch(() => {});
+      await confirmPhoneInput.type(normalizedConfirmPhone, { delay: 40 }).catch(() => {});
     }
 
     const emailInput = this.page
@@ -240,7 +249,7 @@ export class SignupPage {
     if (await confirmEmailInput.isVisible().catch(() => false)) {
       await confirmEmailInput.click({ force: true }).catch(() => {});
       await confirmEmailInput.fill("").catch(() => {});
-      await confirmEmailInput.fill(data.email).catch(() => {});
+      await confirmEmailInput.fill(data.confirmEmail || data.email).catch(() => {});
     }
 
     const passwordInput = this.page
@@ -705,39 +714,65 @@ export class SignupPage {
       .locator(
         [
           'span:has-text("Yes, I want to continue with the private consultation")',
+          'span:has-text("I\'m no longer using this number or email")',
           'button:has-text("Try Again")',
           'input[name="email"]',
           ':text("records found")',
           ':text("No record found")',
           ':text("successfully verified")',
           ':text("could not find any NHS records")',
+          ':text("has not been matched")',
         ].join(", "),
       )
       .first();
 
     await resultLocator.waitFor({ state: "visible", timeout: 45_000 });
 
-    // No-match path: click "Yes, I want to continue with the private consultation"
-    // IMPORTANT: use the FULL text to avoid matching the bold "private consultation"
-    // text in the paragraph above (which is not clickable).
+    // Path A: click "Yes, I want to continue with the private consultation"
     const privateLink = this.page
       .locator(
         'span:has-text("Yes, I want to continue with the private consultation")',
       )
       .first();
+    
+    // Path B: click "I'm no longer using this number or email..."
+    const mismatchLink = this.page
+      .locator(
+        'span:has-text("I\'m no longer using this number or email, I\'ll enter new contact information.")',
+      )
+      .first();
+
     if (await privateLink.isVisible().catch(() => false)) {
       console.log(
         "[SignupPage] Clicking 'private consultation' link to open modal",
       );
       await privateLink.click();
-      // Wait for the Ant Design modal to open (PhoneInput becomes visible)
-      await this.page
-        .locator(
-          ".ant-modal-body input.PhoneInputInput, .ant-modal-content input.PhoneInputInput, .ant-modal input.PhoneInputInput",
-        )
-        .first()
-        .waitFor({ state: "visible", timeout: 20_000 });
-      console.log("[SignupPage] Contact-details modal is open");
+    } else if (await mismatchLink.isVisible().catch(() => false)) {
+      console.log(
+        "[SignupPage] Clicking 'no longer using this number or email' link to open modal",
+      );
+      await mismatchLink.click();
+    }
+
+    // If either link was clicked (or if we were already in the right state), 
+    // wait for the Ant Design modal to open (PhoneInput becomes visible).
+    const isModalOpen = await this.page
+      .locator(
+        ".ant-modal-body input.PhoneInputInput, .ant-modal-content input.PhoneInputInput, .ant-modal input.PhoneInputInput",
+      )
+      .first()
+      .isVisible({ timeout: 5000 })
+      .catch(() => false);
+
+    if (!isModalOpen && (await privateLink.isVisible().catch(() => false) || await mismatchLink.isVisible().catch(() => false))) {
+        // Wait longer if we just clicked one of them
+        await this.page
+          .locator(
+            ".ant-modal-body input.PhoneInputInput, .ant-modal-content input.PhoneInputInput, .ant-modal input.PhoneInputInput",
+          )
+          .first()
+          .waitFor({ state: "visible", timeout: 20_000 });
+        console.log("[SignupPage] Contact-details modal is open");
     }
   }
 
@@ -753,7 +788,12 @@ export class SignupPage {
    * Uses locator-scoped pressSequentially so focus is guaranteed to stay on
    * the correct element (global keyboard.type() can lose focus mid-fill).
    */
-  async fillContactDetails(email: string, phone: string) {
+  async fillContactDetails(
+    email: string,
+    phone: string,
+    confirmEmail?: string,
+    confirmPhone?: string,
+  ) {
     const scope = this.getContactFormScope();
 
     // Wait for email field to confirm modal/form is ready
@@ -766,12 +806,16 @@ export class SignupPage {
     const phoneCount = await phoneInputs.count();
     console.log(`[SignupPage] PhoneInputInput count: ${phoneCount}`);
     const normalizedPhone = this.normalizeUkPhoneForInput(phone);
+    const normalizedConfirmPhone = confirmPhone
+      ? this.normalizeUkPhoneForInput(confirmPhone)
+      : normalizedPhone;
+
     console.log(
       `[SignupPage] Normalized phone for input: "${normalizedPhone}"`,
     );
 
     // Helper: fill ONE react-phone-number-input field
-    const fillPhoneField = async (idx: number, label: string) => {
+    const fillPhoneField = async (idx: number, value: string, label: string) => {
       const inp = phoneInputs.nth(idx);
       await inp.scrollIntoViewIfNeeded().catch(() => {});
       await inp.click();
@@ -779,7 +823,7 @@ export class SignupPage {
       await this.page.waitForTimeout(50);
       await inp.press("Backspace");
       await this.page.waitForTimeout(80);
-      await inp.pressSequentially(normalizedPhone, { delay: 60 });
+      await inp.pressSequentially(value, { delay: 60 });
       await this.page.waitForTimeout(150);
 
       // Blur to run field-level Formik validation
@@ -793,7 +837,7 @@ export class SignupPage {
     };
 
     if (phoneCount >= 1) {
-      await fillPhoneField(0, "phone");
+      await fillPhoneField(0, normalizedPhone, "phone");
     } else {
       // Fallback: generic tel input
       const telInput = scope.locator('input[type="tel"]').first();
@@ -809,7 +853,7 @@ export class SignupPage {
     }
 
     if (phoneCount >= 2) {
-      await fillPhoneField(1, "confirmPhone");
+      await fillPhoneField(1, normalizedConfirmPhone, "confirmPhone");
     }
 
     // ── Email ────────────────────────────────────────────────────────────────
@@ -826,7 +870,7 @@ export class SignupPage {
     if (await confirmEmailInput.isVisible().catch(() => false)) {
       await confirmEmailInput.click();
       await confirmEmailInput.clear();
-      await confirmEmailInput.fill(email);
+      await confirmEmailInput.fill(confirmEmail || email);
       await confirmEmailInput.press("Tab");
       console.log("[SignupPage] Confirm-email filled");
     }

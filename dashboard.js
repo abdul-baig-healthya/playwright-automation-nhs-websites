@@ -678,6 +678,99 @@ app.get("/api/last-result", (req, res) => {
   }
 });
 
+// ── Results browser ──────────────────────────────────────────────────────────
+
+function dirSizeBytes(dirPath) {
+  let total = 0;
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const e of entries) {
+      const full = path.join(dirPath, e.name);
+      if (e.isDirectory()) {
+        total += dirSizeBytes(full);
+      } else {
+        try { total += fs.statSync(full).size; } catch (_) {}
+      }
+    }
+  } catch (_) {}
+  return total;
+}
+
+function collectResultFiles(dirPath) {
+  const files = [];
+  function scan(d) {
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch (_) { return; }
+    for (const e of entries) {
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) {
+        scan(full);
+      } else if (e.isFile()) {
+        if (e.name.endsWith(".webm") || e.name === "trace.zip") {
+          try {
+            const stat = fs.statSync(full);
+            const url = "/" + path.relative(__dirname, full).replace(/\\/g, "/");
+            files.push({ name: e.name, url, size: stat.size, type: e.name.endsWith(".webm") ? "video" : "trace" });
+          } catch (_) {}
+        }
+      }
+    }
+  }
+  scan(dirPath);
+  return files;
+}
+
+app.get("/api/results", (_req, res) => {
+  const dir = path.join(__dirname, "test-results");
+  if (!fs.existsSync(dir)) return res.json([]);
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const results = [];
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const full = path.join(dir, e.name);
+      let mtime = 0;
+      try { mtime = fs.statSync(full).mtimeMs; } catch (_) {}
+      const files = collectResultFiles(full);
+      const totalSize = dirSizeBytes(full);
+      results.push({ name: e.name, path: full, mtime, totalSize, files });
+    }
+    results.sort((a, b) => b.mtime - a.mtime);
+    res.json(results);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete("/api/results", (req, res) => {
+  const { names } = req.body || {};
+  if (!Array.isArray(names) || names.length === 0) {
+    return res.status(400).json({ error: "names array required" });
+  }
+  const dir = path.join(__dirname, "test-results");
+  const deleted = [];
+  const errors = [];
+  for (const name of names) {
+    // Sanitise: no path traversal
+    if (name.includes("..") || name.includes("/") || name.includes("\\")) {
+      errors.push({ name, error: "invalid name" });
+      continue;
+    }
+    const target = path.join(dir, name);
+    if (!target.startsWith(dir + path.sep)) {
+      errors.push({ name, error: "invalid path" });
+      continue;
+    }
+    try {
+      fs.rmSync(target, { recursive: true, force: true });
+      deleted.push(name);
+    } catch (e) {
+      errors.push({ name, error: e.message });
+    }
+  }
+  res.json({ deleted, errors });
+});
+
 // ── Serve dashboard ──────────────────────────────────────────────────────────
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "dashboard-public/index.html"));

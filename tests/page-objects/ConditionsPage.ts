@@ -138,19 +138,39 @@ export class ConditionsPage {
    * Href format: /{pharmacySlug}/conditions/{conditionSlug}
    */
   extractPharmacySlug(href: string): string {
+    // For full URLs, extract only the pathname before parsing
+    let pathname = href;
+    try {
+      if (href.startsWith("http://") || href.startsWith("https://")) {
+        pathname = new URL(href).pathname;
+      }
+    } catch {
+      // fall through and use href as-is
+    }
+
     // Strip hash fragment (e.g. /the-pharmacist/conditions/foo#productSection)
-    const hrefNoHash = href.split("#")[0];
+    const hrefNoHash = pathname.split("#")[0];
     const parts = hrefNoHash.replace(/^\//, "").split("/").filter(Boolean);
 
     // Handle both legacy /{pharmacySlug}/conditions/{conditionSlug}
     // and the current root /conditions/{conditionSlug} route.
-    if (parts.length >= 3 && parts[1] === "conditions") {
-      return parts[0];
+    if (parts.length >= 3 && parts[parts.length - 2] === "conditions") {
+      return parts[parts.length - 3];
     }
 
-    if (parts.length === 2 && parts[0] === "conditions") {
+    if (parts.length >= 2 && parts[parts.length - 2] === "conditions") {
       return "";
     }
+
+    if (parts.length === 1 && parts[0] !== "conditions") {
+      // bare slug with no path prefix — no pharmacy slug
+      return "";
+    }
+
+    // Fallback: if "conditions" appears anywhere in path, return the segment before it
+    const condIdx = parts.indexOf("conditions");
+    if (condIdx > 0) return parts[condIdx - 1];
+    if (condIdx === 0) return "";
 
     throw new Error(
       `Unexpected condition href format: "${href}". Expected /{pharmacySlug}/conditions/{conditionSlug} or /conditions/{conditionSlug}`,

@@ -2299,6 +2299,8 @@
         booking: "BOOKING",
         payment: "PAYMENT",
         condition_rules: "CONDITION RULES",
+        all_conditions: "ALL CONDITIONS",
+        other: "OTHER",
       };
 
       const JOURNEY_SUITE_FILES = {
@@ -2311,6 +2313,7 @@
         booking: "tests/e2e/booking-flows.spec.ts",
         payment: "tests/e2e/payment-flows.spec.ts",
         condition_rules: "tests/e2e/condition-rules-flows.spec.ts",
+        all_conditions: "tests/e2e/all-conditions-flows.spec.ts",
       };
 
       function getJourneyFromTest(testItem) {
@@ -2327,9 +2330,10 @@
         if (file.includes("nhs-flows.spec")) return "nhs";
         if (file.includes("private-flows.spec")) return "private";
         if (file.includes("condition-flow.spec")) return "lifestyle";
+        if (file.includes("all-conditions-flows.spec")) return "all_conditions";
         if (/\bnhs\b/.test(title)) return "nhs";
         if (/\bprivate\b/.test(title)) return "private";
-        return "lifestyle";
+        return "other";
       }
 
       function toCaseId(index) {
@@ -2815,6 +2819,8 @@
           "condition_rules",
           "booking",
           "payment",
+          "all_conditions",
+          "other",
         ];
         const journeyEmojis = {
           seo_health: "🔍",
@@ -2826,6 +2832,8 @@
           condition_rules: "📋",
           booking: "📅",
           payment: "💳",
+          all_conditions: "🗂️",
+          other: "📦",
         };
 
         // Assign global IDs to all tests

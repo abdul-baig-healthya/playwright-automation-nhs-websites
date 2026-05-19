@@ -138,8 +138,9 @@ export class QuestionnairePage {
   }
 
   /**
-   * For single-choice (radio) questions, prefer the safest negative answer if
-   * available, including the exact "I do not have these symptoms" wording.
+   * For single-choice (radio) questions, click one enabled option.
+   * Generic flows: random selection.
+   * Rule-based flows: prefer safe/negative answers to avoid dead-ends.
    */
   private async clickBestRadioOption(
     wrappers: ReturnType<Page["locator"]>,
@@ -149,7 +150,25 @@ export class QuestionnairePage {
         ".ant-radio-wrapper-disabled, .ant-radio-button-wrapper-disabled, [aria-disabled='true']",
       ),
     });
-    return this.clickPreferredOption(enabledWrappers, [
+    const count = await enabledWrappers.count().catch(() => 0);
+    if (!count) return false;
+
+    if (this.shouldUseRandomAnswers()) {
+      const idx = Math.floor(Math.random() * count);
+      const opt = enabledWrappers.nth(idx);
+      if (await opt.isVisible().catch(() => false)) {
+        await opt.scrollIntoViewIfNeeded().catch(() => {});
+        await opt.click({ force: true }).catch(async () => {
+          await opt.evaluate((el: HTMLElement) => el.click());
+        });
+        await this.page.waitForTimeout(300);
+        return true;
+      }
+      return false;
+    }
+
+    // Deterministic (rule-based flow): prefer safe/negative answers
+    const safePatterns = [
       /^I do not have these symptoms$/i,
       /do not have these symptoms/i,
       /do not have/i,
@@ -157,7 +176,51 @@ export class QuestionnairePage {
       /None of the above/i,
       /None apply/i,
       /^None$/i,
-    ]);
+    ];
+    for (const pattern of safePatterns) {
+      for (let i = 0; i < count; i++) {
+        const opt = enabledWrappers.nth(i);
+        const text = await opt.textContent().catch(() => "");
+        if (pattern.test(text ?? "")) {
+          if (await opt.isVisible().catch(() => false)) {
+            await opt.scrollIntoViewIfNeeded().catch(() => {});
+            await opt.click({ force: true }).catch(async () => {
+              await opt.evaluate((el: HTMLElement) => el.click());
+            });
+            await this.page.waitForTimeout(300);
+            return true;
+          }
+        }
+      }
+    }
+    // Fallback: last enabled option
+    const last = enabledWrappers.nth(count - 1);
+    if (await last.isVisible().catch(() => false)) {
+      await last.scrollIntoViewIfNeeded().catch(() => {});
+      await last.click({ force: true }).catch(async () => {
+        await last.evaluate((el: HTMLElement) => el.click());
+      });
+      await this.page.waitForTimeout(300);
+      return true;
+    }
+    return false;
+  }
+
+  /** Generate a random date string in DD-MM-YYYY format (1960–2009). */
+  private randomDate(): string {
+    const year = 1960 + Math.floor(Math.random() * 50);
+    const month = 1 + Math.floor(Math.random() * 12);
+    const day = 1 + Math.floor(Math.random() * 28);
+    return `${String(day).padStart(2, "0")}-${String(month).padStart(2, "0")}-${year}`;
+  }
+
+  /**
+   * Returns true when running a generic (non-rule-based) flow.
+   * Rule-based flows set OVERRIDE_ACTIVE_CONDITION and rely on MAX_QUESTIONNAIRE_ATTEMPTS=1
+   * with deterministic answers; random selection would cause un-retriable dead-ends.
+   */
+  private shouldUseRandomAnswers(): boolean {
+    return !process.env.OVERRIDE_ACTIVE_CONDITION;
   }
 
   private resolveScope(
@@ -1038,102 +1101,151 @@ export class QuestionnairePage {
       return handled;
     }
 
-    const noSymptomsSelected = await this.selectRadioByText(
-      "I do not have these symptoms",
-    );
-    if (noSymptomsSelected) {
-      console.log(
-        '[QuestionnairePage] Selected "I do not have these symptoms"',
-      );
-      return true;
-    }
-
     // Single choice (radio buttons)
     const radios = this.page.locator(
       'input[type="radio"]:not([name="gender"]):not([id="male"]):not([id="female"])',
     );
     if ((await radios.count()) > 0) {
-      const optionSelectors = [
-        '.ant-radio-wrapper:has-text("I do not have these symptoms")',
-        '.ant-radio-button-wrapper:has-text("I do not have these symptoms")',
-        'label:has-text("I do not have these symptoms")',
-        "text=/I do not have.*these symptoms/i",
-        "text=/do not have these symptoms/i",
-        "text=/^No$/i",
-      ];
-      for (const selector of optionSelectors) {
-        const option = this.page.locator(selector).first();
-        if (await option.isVisible().catch(() => false)) {
-          await option.click({ force: true });
-          await this.page.waitForTimeout(300);
-          const noSymptomsChecked = await this.isRadioSelectionApplied(
-            "I do not have these symptoms",
-          );
-          if (noSymptomsChecked) return true;
+      const wrappers = this.page.locator(
+        [
+          '.ant-radio-wrapper:not(.ant-radio-wrapper-disabled)',
+          '.ant-radio-button-wrapper:not(.ant-radio-button-wrapper-disabled)',
+          'label:has(input[type="radio"]:not([disabled]))',
+        ].join(", "),
+      );
+      const wrapperCount = await wrappers.count().catch(() => 0);
+      if (wrapperCount > 0) {
+        if (this.shouldUseRandomAnswers()) {
+          const idx = Math.floor(Math.random() * wrapperCount);
+          const opt = wrappers.nth(idx);
+          if (await opt.isVisible().catch(() => false)) {
+            await opt.scrollIntoViewIfNeeded().catch(() => {});
+            await opt.click({ force: true }).catch(() => {});
+            await this.page.waitForTimeout(300);
+            return true;
+          }
+        } else {
+          // Deterministic: prefer safe/negative answer text
+          const safePatterns = [
+            /^I do not have these symptoms$/i,
+            /do not have these symptoms/i,
+            /do not have/i,
+            /^No$/i,
+            /^None$/i,
+          ];
+          for (const pattern of safePatterns) {
+            for (let k = 0; k < wrapperCount; k++) {
+              const opt = wrappers.nth(k);
+              const text = await opt.textContent().catch(() => "");
+              if (pattern.test(text ?? "")) {
+                if (await opt.isVisible().catch(() => false)) {
+                  await opt.click({ force: true }).catch(() => {});
+                  await this.page.waitForTimeout(300);
+                  return true;
+                }
+              }
+            }
+          }
+          // Fallback: last wrapper
+          const last = wrappers.nth(wrapperCount - 1);
+          if (await last.isVisible().catch(() => false)) {
+            await last.click({ force: true }).catch(() => {});
+            await this.page.waitForTimeout(300);
+            return true;
+          }
         }
       }
-
-      const radioLabels = this.page
-        .locator('label:has(input[type="radio"])')
-        .filter({
-          hasText: /I do not have these symptoms|do not have|^No$/i,
-        });
-
-      const radioLabelCount = await radioLabels.count();
-      for (let i = 0; i < radioLabelCount; i++) {
-        const label = radioLabels.nth(i);
-        const input = label.locator('input[type="radio"]').first();
-
-        const visible = await label.isVisible().catch(() => false);
-        if (!visible) continue;
-        const enabled = await input.isEnabled().catch(() => false);
-        if (!enabled) continue;
-        const disabledAttr = await input.getAttribute("disabled").catch(() => null);
-        if (disabledAttr !== null) continue;
-
-        await label.click({ force: true }).catch(() => {});
-        await this.page.waitForTimeout(300);
-        const noSymptomsChecked = await this.isRadioSelectionApplied(
-          "I do not have these symptoms",
-        );
-        if (noSymptomsChecked) return true;
-      }
-
       const radioCount = await radios.count();
-      if (radioCount > 0) {
-        const fallbackRadio = radios.nth(radioCount - 1);
-        const isVisible = await fallbackRadio.isVisible().catch(() => false);
-        if (isVisible) {
-          await fallbackRadio.click({ force: true }).catch(() => {});
+      if (this.shouldUseRandomAnswers()) {
+        const idx = Math.floor(Math.random() * radioCount);
+        const radio = radios.nth(idx);
+        if (await radio.isVisible().catch(() => false)) {
+          await radio.click({ force: true }).catch(() => {});
+          return true;
+        }
+      } else {
+        const radio = radios.nth(radioCount - 1);
+        if (await radio.isVisible().catch(() => false)) {
+          await radio.click({ force: true }).catch(() => {});
           return true;
         }
       }
       return false;
     }
 
-    // Ant Design radio group — prefer "No", fallback to last option
+    // Ant Design radio group — pick random
     const antRadioWrappers = this.page.locator(".ant-radio-wrapper");
     if ((await antRadioWrappers.count()) > 0) {
       return await this.clickBestRadioOption(antRadioWrappers);
     }
 
-    // Ant Design radio button style (ant-radio-button-wrapper)
+    // Ant Design radio button style — pick random
     const antRadioButtons = this.page.locator(".ant-radio-button-wrapper");
     if ((await antRadioButtons.count()) > 0) {
       return await this.clickBestRadioOption(antRadioButtons);
     }
 
-    // check_agree — must check the checkbox to agree/consent
-    const agreeCheckbox = this.page.locator('input[type="checkbox"]');
-    if ((await agreeCheckbox.count()) > 0) {
-      // For "none of the above" style, check first; for agree checkboxes, check all
-      const noneOption = this.page
-        .locator('label:has(input[type="checkbox"])')
-        .filter({ hasText: /none|n\/a/i });
-      if ((await noneOption.count()) > 0) {
-        await noneOption.first().click();
+    // Checkboxes
+    const checkboxLabels = this.page.locator(
+      'label:has(input[type="checkbox"]:not([disabled]))',
+    );
+    const labelCount = await checkboxLabels.count().catch(() => 0);
+    if (labelCount > 0) {
+      if (this.shouldUseRandomAnswers()) {
+        const numToSelect = 1 + Math.floor(Math.random() * labelCount);
+        const indices = Array.from({ length: labelCount }, (_, i) => i)
+          .sort(() => Math.random() - 0.5)
+          .slice(0, numToSelect);
+        for (const i of indices) {
+          const label = checkboxLabels.nth(i);
+          if (await label.isVisible().catch(() => false)) {
+            await label.scrollIntoViewIfNeeded().catch(() => {});
+            await label.click({ force: true }).catch(() => {});
+            await this.page.waitForTimeout(200);
+          }
+        }
       } else {
-        await agreeCheckbox.first().check({ force: true });
+        // Deterministic: prefer "None of the above", else first option
+        let selectedSafe = false;
+        for (let i = 0; i < labelCount; i++) {
+          const label = checkboxLabels.nth(i);
+          const text = await label.textContent().catch(() => "");
+          if (/none of the above/i.test(text ?? "")) {
+            if (await label.isVisible().catch(() => false)) {
+              await label.scrollIntoViewIfNeeded().catch(() => {});
+              await label.click({ force: true }).catch(() => {});
+              await this.page.waitForTimeout(200);
+              selectedSafe = true;
+              break;
+            }
+          }
+        }
+        if (!selectedSafe) {
+          const first = checkboxLabels.nth(0);
+          if (await first.isVisible().catch(() => false)) {
+            await first.scrollIntoViewIfNeeded().catch(() => {});
+            await first.click({ force: true }).catch(() => {});
+            await this.page.waitForTimeout(200);
+          }
+        }
+      }
+      return true;
+    }
+    const rawCheckboxes = this.page.locator('input[type="checkbox"]:not([disabled])');
+    const rawCbCount = await rawCheckboxes.count().catch(() => 0);
+    if (rawCbCount > 0) {
+      if (this.shouldUseRandomAnswers()) {
+        const numToSelect = 1 + Math.floor(Math.random() * rawCbCount);
+        const indices = Array.from({ length: rawCbCount }, (_, i) => i)
+          .sort(() => Math.random() - 0.5)
+          .slice(0, numToSelect);
+        for (const i of indices) {
+          await rawCheckboxes.nth(i).check({ force: true }).catch(() => {});
+          await this.page.waitForTimeout(200);
+        }
+      } else {
+        await rawCheckboxes.nth(0).check({ force: true }).catch(() => {});
+        await this.page.waitForTimeout(200);
       }
       return true;
     }
@@ -1182,14 +1294,10 @@ export class QuestionnairePage {
       return true;
     }
 
-    // Date picker (Ant Design) — look for ant-picker
+    // Date picker (Ant Design)
     const datePicker = this.page.locator(".ant-picker input").first();
     if (await datePicker.isVisible().catch(() => false)) {
-      await datePicker.click();
-      await datePicker.fill("1990-01-01");
-      // Press Enter to confirm date selection
-      await this.page.keyboard.press("Enter");
-      return true;
+      return this.fillDateByRule(this.shouldUseRandomAnswers() ? this.randomDate() : "1990-01-01");
     }
 
     return false;
@@ -1664,24 +1772,46 @@ export class QuestionnairePage {
       const optCount = await options.count().catch(() => 0);
       if (!optCount) continue;
 
-      const noneOpt = options.filter({ hasText: /none of the above|none apply|^none$/i });
-      if (this.retryAttempt === 0 && (await noneOpt.count()) > 0) {
-        const opt = noneOpt.first();
-        if (await opt.isVisible().catch(() => false)) {
-          await opt.scrollIntoViewIfNeeded().catch(() => {});
-          await opt.click({ force: true }).catch(async () => { await opt.evaluate((el: HTMLElement) => el.click()); });
-          await this.page.waitForTimeout(400);
-          return true;
+      // Pick checkbox(es) based on flow type
+      if (this.shouldUseRandomAnswers()) {
+        const numToSelect = 1 + Math.floor(Math.random() * optCount);
+        const indices = Array.from({ length: optCount }, (_, i) => i)
+          .sort(() => Math.random() - 0.5)
+          .slice(0, numToSelect);
+        for (const idx of indices) {
+          const opt = options.nth(idx);
+          if (await opt.isVisible().catch(() => false)) {
+            await opt.scrollIntoViewIfNeeded().catch(() => {});
+            await opt.click({ force: true }).catch(async () => { await opt.evaluate((el: HTMLElement) => el.click()); });
+            await this.page.waitForTimeout(300);
+          }
+        }
+      } else {
+        // Deterministic: prefer "None of the above", else first option
+        let selectedSafe = false;
+        for (let j = 0; j < optCount; j++) {
+          const opt = options.nth(j);
+          const text = await opt.textContent().catch(() => "");
+          if (/none of the above/i.test(text ?? "")) {
+            if (await opt.isVisible().catch(() => false)) {
+              await opt.scrollIntoViewIfNeeded().catch(() => {});
+              await opt.click({ force: true }).catch(async () => { await opt.evaluate((el: HTMLElement) => el.click()); });
+              await this.page.waitForTimeout(300);
+              selectedSafe = true;
+              break;
+            }
+          }
+        }
+        if (!selectedSafe) {
+          const first = options.nth(0);
+          if (await first.isVisible().catch(() => false)) {
+            await first.scrollIntoViewIfNeeded().catch(() => {});
+            await first.click({ force: true }).catch(async () => { await first.evaluate((el: HTMLElement) => el.click()); });
+            await this.page.waitForTimeout(300);
+          }
         }
       }
-      const idx = this.retryAttempt === 0 ? 0 : (this.retryAttempt - 1) % optCount;
-      const opt = options.nth(idx);
-      if (await opt.isVisible().catch(() => false)) {
-        await opt.scrollIntoViewIfNeeded().catch(() => {});
-        await opt.click({ force: true }).catch(async () => { await opt.evaluate((el: HTMLElement) => el.click()); });
-        await this.page.waitForTimeout(400);
-        return true;
-      }
+      return true;
     }
 
     // ── Standalone checkboxes (check_agree type) ────────────────────────────
@@ -1710,7 +1840,7 @@ export class QuestionnairePage {
       const value = (await input.inputValue().catch(() => "")) ?? "";
       if (value.trim()) continue; // already filled
       console.log(`[QuestionnairePage] Filling date picker ${i + 1}`);
-      return this.fillDateByRule("01-01-2020");
+      return this.fillDateByRule(this.shouldUseRandomAnswers() ? this.randomDate() : "01-01-2020");
     }
 
     // ── Number inputs ───────────────────────────────────────────────────────
@@ -1754,46 +1884,15 @@ export class QuestionnairePage {
   }
 
   /**
-   * Pick a radio/ant-radio option for this attempt.
-   * Attempt 0: prefer "No"/"None"/"do not have" patterns, fall back to last.
-   * Attempt N: pick option at index (N-1) % count — different each retry.
+   * Pick one enabled radio/ant-radio option.
+   * Generic flows: random. Rule-based flows: prefer safe answers, fallback by attempt index.
    */
   private async pickRadioOptionByAttempt(
     options: ReturnType<Page["locator"]>,
     count: number,
   ): Promise<boolean> {
-    if (this.retryAttempt === 0) {
-      const preferencePatterns = [
-        /^I do not have these symptoms$/i,
-        /do not have these symptoms/i,
-        /do not have/i,
-        /^No$/i,
-        /None of the above/i,
-        /None apply/i,
-        /^None$/i,
-      ];
-      for (const pattern of preferencePatterns) {
-        const match = options.filter({ hasText: pattern });
-        if (await match.count() > 0) {
-          const opt = match.first();
-          if (await opt.isVisible().catch(() => false)) {
-            await opt.scrollIntoViewIfNeeded().catch(() => {});
-            await opt.click({ force: true }).catch(async () => { await opt.evaluate((el: HTMLElement) => el.click()); });
-            await this.page.waitForTimeout(300);
-            return true;
-          }
-        }
-      }
-      // Fall back to last option
-      const last = options.nth(count - 1);
-      if (await last.isVisible().catch(() => false)) {
-        await last.scrollIntoViewIfNeeded().catch(() => {});
-        await last.click({ force: true }).catch(() => {});
-        await this.page.waitForTimeout(300);
-        return true;
-      }
-    } else {
-      const idx = (this.retryAttempt - 1) % count;
+    if (this.shouldUseRandomAnswers()) {
+      const idx = Math.floor(Math.random() * count);
       const opt = options.nth(idx);
       if (await opt.isVisible().catch(() => false)) {
         await opt.scrollIntoViewIfNeeded().catch(() => {});
@@ -1801,6 +1900,42 @@ export class QuestionnairePage {
         await this.page.waitForTimeout(300);
         return true;
       }
+      return false;
+    }
+
+    // Deterministic (rule-based flow): try safe patterns first, then attempt-based index
+    if (this.retryAttempt === 0) {
+      const safePatterns = [
+        /^I do not have these symptoms$/i,
+        /do not have these symptoms/i,
+        /do not have/i,
+        /^No$/i,
+        /^None$/i,
+        /None of the above/i,
+        /None apply/i,
+      ];
+      for (const pattern of safePatterns) {
+        for (let i = 0; i < count; i++) {
+          const opt = options.nth(i);
+          const text = await opt.textContent().catch(() => "");
+          if (pattern.test(text ?? "")) {
+            if (await opt.isVisible().catch(() => false)) {
+              await opt.scrollIntoViewIfNeeded().catch(() => {});
+              await opt.click({ force: true }).catch(async () => { await opt.evaluate((el: HTMLElement) => el.click()); });
+              await this.page.waitForTimeout(300);
+              return true;
+            }
+          }
+        }
+      }
+    }
+    const idx = this.retryAttempt % count;
+    const opt = options.nth(idx);
+    if (await opt.isVisible().catch(() => false)) {
+      await opt.scrollIntoViewIfNeeded().catch(() => {});
+      await opt.click({ force: true }).catch(async () => { await opt.evaluate((el: HTMLElement) => el.click()); });
+      await this.page.waitForTimeout(300);
+      return true;
     }
     return false;
   }

@@ -23,7 +23,209 @@ export class ConditionsPage {
   }
 
   async goto() {
-    await this.page.goto("/conditions");
+    const corporateId = process.env.USER_JOURNEY_CORPORATE_ID;
+    if (corporateId) {
+      console.log(`[ConditionsPage] Selecting branch with corporateId: ${corporateId}`);
+      await this.page.goto("/find-pharmacy");
+      
+      // Wait for any of the common card selectors to appear
+      const cardSelector = await Promise.race([
+        this.page.waitForSelector(".pharmacy-item", { timeout: 10000 }).then(() => ".pharmacy-item"),
+        this.page.waitForSelector(".branch-card", { timeout: 10000 }).then(() => ".branch-card"),
+        this.page.waitForSelector(".branch-item", { timeout: 10000 }).then(() => ".branch-item"),
+        this.page.waitForSelector(".location-card", { timeout: 10000 }).then(() => ".location-card"),
+        this.page.waitForSelector("div[class*=\"card\"] button", { timeout: 10000 }).then(() => "div[class*=\"card\"]"),
+      ]).catch(() => ".pharmacy-item"); // fallback
+      
+      const cards = this.page.locator(cardSelector);
+      const count = await cards.count();
+      let clicked = false;
+      
+      for (let i = 0; i < count; i++) {
+        const card = cards.nth(i);
+        // Strategy A: data attributes matching any key related to ID/corporate/branch/pharmacy/location
+        const dataId = await card.evaluate((el: any) => {
+          for (const key of Object.keys(el.dataset)) {
+            if (/id|corporate|branch|pharmacy|location/i.test(key)) {
+              const val = el.dataset[key];
+              if (val) return val;
+            }
+          }
+          return el.dataset.id || el.dataset.corporateId || el.dataset.pharmacyId || null;
+        });
+        
+        let cid = dataId ? String(dataId).trim() : null;
+        
+        // Strategy B: React fiber
+        if (!cid) {
+          cid = await card.evaluate((el: any) => {
+            const fiberKey = Object.keys(el).find(k =>
+              k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance")
+            );
+            if (!fiberKey) {
+              console.log("[Fiber Diagnostics] No fiberKey found on element.");
+              return null;
+            }
+            
+            const cardText = el.innerText ? el.innerText.toLowerCase() : "";
+            
+            // Helper to recursively find arrays that look like lists of pharmacies/branches
+            const scanPropsForList = (obj: any, visited = new Set()): any[] | null => {
+              if (!obj || typeof obj !== "object" || visited.has(obj)) return null;
+              visited.add(obj);
+              
+              if (Array.isArray(obj)) {
+                const isPharmacyList = obj.some(item => {
+                  if (!item || typeof item !== "object") return false;
+                  const keys = Object.keys(item);
+                  return keys.some(k => /^(corporateId|pharmacyId|branchId|id|uniqueNumber|pharmacySlug)$/i.test(k)) &&
+                         keys.some(k => /^(name|title|line1|address|town|pincode)$/i.test(k));
+                });
+                if (isPharmacyList) return obj;
+              }
+              
+              for (const key of Object.keys(obj)) {
+                const val = obj[key];
+                if (val && typeof val === "object") {
+                  const found = scanPropsForList(val, visited);
+                  if (found) return found;
+                }
+              }
+              return null;
+            };
+
+            let curr = el[fiberKey];
+            while (curr) {
+              const props = curr.memoizedProps || curr.pendingProps;
+              if (props) {
+                // First check direct properties of props
+                for (const key of Object.keys(props)) {
+                  const val = props[key];
+                  if (/^(id|corporateId|pharmacyId|branchId|branch|corporate|location|locationId)$/i.test(key)) {
+                    if (val !== null && val !== undefined) {
+                      if (typeof val === "string" || typeof val === "number") {
+                        return String(val).trim();
+                      }
+                      if (typeof val === "object" && !Array.isArray(val)) {
+                        for (const subKey of Object.keys(val)) {
+                          if (/^(id|corporateId|pharmacyId|branchId|branch|corporate|location|locationId)$/i.test(subKey)) {
+                            const subVal = val[subKey];
+                            if (subVal !== null && subVal !== undefined && (typeof subVal === "string" || typeof subVal === "number")) {
+                              return String(subVal).trim();
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                
+                // Then scan for lists in props
+                const list = scanPropsForList(props);
+                if (list) {
+                  for (const item of list) {
+                    const name = String(item.name || item.title || "").toLowerCase();
+                    const line1 = String(item.line1 || "").toLowerCase();
+                    const town = String(item.town || "").toLowerCase();
+                    const pincode = String(item.pincode || item.postcode || "").toLowerCase();
+                    
+                    const nameMatch = name && cardText.includes(name);
+                    const lineMatch = line1 && cardText.includes(line1);
+                    const townMatch = town && cardText.includes(town);
+                    const pinMatch = pincode && cardText.replace(/\s+/g, "").includes(pincode.replace(/\s+/g, ""));
+                    
+                    if (nameMatch || lineMatch || townMatch || pinMatch) {
+                      const foundId = item.corporateId || item.pharmacyId || item.branchId || item.id;
+                      if (foundId !== undefined && foundId !== null) {
+                        return String(foundId).trim();
+                      }
+                    }
+                  }
+                }
+              }
+              curr = curr.return;
+            }
+            return null;
+          }).catch((err) => {
+            console.log("[Fiber Diagnostics] evaluate failed:", err.message);
+            return null;
+          });
+        }
+        
+        if (cid && String(cid).trim() === String(corporateId).trim()) {
+          const btn = card.locator("button");
+          const btnText = await btn.innerText().catch(() => "");
+          if (btnText.toLowerCase().includes("selected")) {
+            console.log(`[ConditionsPage] Branch ${corporateId} is already selected. Proceeding to /conditions.`);
+            await this.page.goto("/conditions");
+          } else {
+            await btn.click();
+          }
+          clicked = true;
+          break;
+        }
+      }
+      
+      // Strategy C: sequential clicks with request interception
+      if (!clicked) {
+        console.log(`[ConditionsPage] Could not find corporateId ${corporateId} in DOM/React fiber. Intercepting clicks.`);
+        
+        const extractIdFromUrl = (urlStr: string) => {
+          try {
+            const url = new URL(urlStr);
+            const queryParams = [
+              'id', 'corporateid', 'corporate_id', 'corporateId',
+              'pharmacyid', 'pharmacy_id', 'pharmacyId',
+              'branchid', 'branch_id', 'branchId',
+              'branch', 'locationid', 'location_id', 'locationId'
+            ];
+            for (const param of queryParams) {
+              const val = url.searchParams.get(param);
+              if (val && /^\d+$/.test(val)) return parseInt(val, 10);
+            }
+            const segments = url.pathname.split('/').filter(Boolean);
+            for (const seg of segments) {
+              if (/^\d{3,8}$/.test(seg)) return parseInt(seg, 10);
+            }
+          } catch (e) {
+            const m = urlStr.match(/[?&](id|corporateId|corporate_id|pharmacyId|pharmacy_id|branchId|branch_id|branch|locationId|location_id)=(\d+)/i);
+            if (m) return parseInt(m[2], 10);
+            const pm = urlStr.match(/\/(\d{3,8})(?:\/|\?|$)/);
+            if (pm) return parseInt(pm[1], 10);
+          }
+          return null;
+        };
+
+        for (let i = 0; i < count; i++) {
+          const card = cards.nth(i);
+          const btn = card.locator("button");
+          
+          let matched = false;
+          const requestPromise = this.page.waitForRequest(req => {
+            const u = req.url();
+            const cid = extractIdFromUrl(u);
+            if (cid && String(cid) === String(corporateId)) {
+              matched = true;
+              return true;
+            }
+            return false;
+          }, { timeout: 2500 }).catch(() => null);
+          
+          await btn.click();
+          await requestPromise;
+          if (matched) {
+            clicked = true;
+            break;
+          }
+        }
+      }
+      
+      // Wait for navigation or load state
+      await this.page.waitForURL("**/conditions**", { timeout: 10000 }).catch(() => {});
+    } else {
+      await this.page.goto("/conditions");
+    }
+    
     // Dismiss cookie consent banner if it appears (blocks condition card clicks)
     await this.page
       .locator(

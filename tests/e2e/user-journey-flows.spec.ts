@@ -79,13 +79,24 @@ test.describe("User Journey Flows", () => {
         `No sanityProjectId set for "${pharmacyName}" — add it in tests/fixtures/pharmacies.ts`,
       );
 
-      // ─── Step 1: Fetch all conditions from Sanity for this flow ─────────
       let conditions: SanityCondition[] = [];
       await test.step(`Fetch conditions from Sanity (project=${projectId}) for ${flow.id}`, async () => {
-        const allConditions = await fetchConditions(projectId);
-        console.log(
-          `📥 Sanity returned ${allConditions.length} active condition(s) for project ${projectId}`,
-        );
+        let allConditions = await fetchConditions(projectId);
+        
+        const corporateId = process.env.USER_JOURNEY_CORPORATE_ID;
+        if (corporateId) {
+          allConditions = allConditions.filter((c) => {
+            if (c.corporateId == null) return false;
+            return String(c.corporateId).trim() === String(corporateId).trim();
+          });
+          console.log(
+            `🔍 Filtered to branch corporateId ${corporateId}: ${allConditions.length} active condition(s) remaining`
+          );
+        } else {
+          console.log(
+            `📥 Sanity returned ${allConditions.length} active condition(s) for project ${projectId}`,
+          );
+        }
         conditions = getMatchingConditions(allConditions, flow.pattern);
         if (conditions.length === 0) {
           throw new Error(

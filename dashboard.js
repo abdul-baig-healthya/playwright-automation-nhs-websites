@@ -395,15 +395,19 @@ app.get("/api/flow-configs", (_req, res) => {
 
 app.get("/api/journey-conditions", async (req, res) => {
   res.set("Cache-Control", "no-store");
-  const { pharmacyName } = req.query;
+  const { pharmacyName, corporateId } = req.query;
   if (!pharmacyName) return res.status(400).json({ error: "pharmacyName required" });
   const pharmacies = readPharmacies();
   const pharmacy = pharmacies.find(p => p.name === pharmacyName);
   if (!pharmacy) return res.status(404).json({ error: "Pharmacy not found" });
   if (!pharmacy.sanityProjectId) return res.json({ F1: [], F2: [], F3: [], F4: [], F5: [] });
   try {
-    const conditions = await fetchSanityConditions(pharmacy.sanityProjectId);
-// console.log(`Fetched ${conditions.length} conditions from Sanity for project ${pharmacy.sanityProjectId}`,conditions);
+    let conditions = await fetchSanityConditions(pharmacy.sanityProjectId);
+    // If a specific branch corporateId is provided, filter to that branch only
+    if (corporateId) {
+      const cid = parseInt(corporateId, 10);
+      conditions = conditions.filter(c => c.corporateId === cid);
+    }
     const result = {};
     for (const flow of JOURNEY_FLOWS_JS) {
       result[flow.id] = conditions
@@ -413,6 +417,322 @@ app.get("/api/journey-conditions", async (req, res) => {
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Branch pharmacies (multi-location support) ─────────────────────────────
+
+// Cache: pharmacyBaseURL → { branches, expiresAt }
+const _branchCache = new Map();
+const BRANCH_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Uses Playwright (headless Chromium) to render {baseURL}/find-pharmacy,
+ * wait for .pharmacy-item cards, then click each branch button while
+ * intercepting ANY API call whose URL contains a numeric ?id= param to
+ * capture the corporateId dynamically — works for any Healthya pharmacy.
+ *
+ * Strategies used (in order):
+ *  1. Network interception: captures the first API call with ?id=<number>
+ *     triggered when a branch button is clicked (e.g. /api/pharmacy-info?id=1083)
+ *  2. Data-attribute fallback: looks for data-id / data-corporate-id on the card
+ *  3. React props fallback: walks React fiber to find a numeric id prop
+ *
+ * Results are cached for 10 minutes so Playwright only runs once per pharmacy.
+ * Returns [] if /find-pharmacy doesn't exist, has only 1 location, or errors.
+ */
+function extractIdFromUrl(urlStr, origin) {
+  try {
+    const url = new URL(urlStr);
+    const queryParams = [
+      'id', 'corporateid', 'corporate_id', 'corporateId',
+      'pharmacyid', 'pharmacy_id', 'pharmacyId',
+      'branchid', 'branch_id', 'branchId',
+      'branch', 'locationid', 'location_id', 'locationId'
+    ];
+    for (const param of queryParams) {
+      const val = url.searchParams.get(param);
+      if (val && /^\d+$/.test(val)) {
+        return parseInt(val, 10);
+      }
+    }
+    const segments = url.pathname.split('/').filter(Boolean);
+    for (const seg of segments) {
+      if (/^\d{3,8}$/.test(seg)) {
+        return parseInt(seg, 10);
+      }
+    }
+  } catch (e) {
+    const m = urlStr.match(/[?&](id|corporateId|corporate_id|pharmacyId|pharmacy_id|branchId|branch_id|branch|locationId|location_id)=(\d+)/i);
+    if (m) return parseInt(m[2], 10);
+    const pm = urlStr.match(/\/(\d{3,8})(?:\/|\?|$)/);
+    if (pm) return parseInt(pm[1], 10);
+  }
+  return null;
+}
+
+async function fetchBranchPharmacies(baseURL) {
+  // Return from cache if still fresh
+  const cached = _branchCache.get(baseURL);
+  if (cached && cached.expiresAt > Date.now()) return cached.branches;
+
+  const { chromium } = require("playwright");
+  let browser;
+  try {
+    const origin  = baseURL.replace(/\/$/, "");
+    const findUrl = origin + "/find-pharmacy";
+
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+
+    // ── Capture ALL branch/corporate API calls that fire during page load ──
+    const pageLoadIds = new Set();
+    const pageLoadHandler = (req) => {
+      const u = req.url();
+      if (u.startsWith(origin) || u.includes("/api/")) {
+        const id = extractIdFromUrl(u, origin);
+        if (id !== null) {
+          pageLoadIds.add(id);
+        }
+      }
+    };
+    page.on("request", pageLoadHandler);
+
+    const response = await page.goto(findUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
+    if (!response || response.status() >= 400) {
+      page.off("request", pageLoadHandler);
+      console.log(`[branch-pharmacies] ${findUrl} returned ${response?.status()} — skipping`);
+      _branchCache.set(baseURL, { branches: [], expiresAt: Date.now() + BRANCH_CACHE_TTL_MS });
+      return [];
+    }
+
+    // Wait for at least one pharmacy card using a set of potential selectors
+    let cardSelector = ".pharmacy-item";
+    const foundSelector = await Promise.race([
+      page.waitForSelector(".pharmacy-item", { timeout: 15000 }).then(() => ".pharmacy-item"),
+      page.waitForSelector(".branch-card", { timeout: 15000 }).then(() => ".branch-card"),
+      page.waitForSelector(".branch-item", { timeout: 15000 }).then(() => ".branch-item"),
+      page.waitForSelector(".location-card", { timeout: 15000 }).then(() => ".location-card"),
+    ]).catch(() => null);
+
+    if (foundSelector) {
+      cardSelector = foundSelector;
+    } else {
+      const hasDivs = await page.waitForSelector("div[class*='card'], div[class*='branch'], div[class*='pharmacy']", { timeout: 5000 })
+        .then(() => true)
+        .catch(() => false);
+      if (hasDivs) {
+        cardSelector = "div[class*='card'], div[class*='branch'], div[class*='pharmacy']";
+      } else {
+        page.off("request", pageLoadHandler);
+        _branchCache.set(baseURL, { branches: [], expiresAt: Date.now() + BRANCH_CACHE_TTL_MS });
+        return [];
+      }
+    }
+
+    // Stop collecting page-load IDs after initial render
+    page.off("request", pageLoadHandler);
+
+    // Give a short extra window for late-loading cards (Paydens map widget)
+    await page.waitForTimeout(2000);
+
+    // ── Step 1: extract visible name + address from each card ──────────────
+    const cardInfo = await page.$$eval(cardSelector, (cards) =>
+      cards.map((card) => ({
+        name:    card.querySelector("h2, h3, div[class*='title'], div[class*='name']")?.innerText?.trim() || "",
+        address: card.querySelector("p, div[class*='address'], span[class*='address']")?.innerText?.trim()  || "",
+      })).filter((b) => b.name)
+    );
+
+    if (cardInfo.length <= 1) {
+      _branchCache.set(baseURL, { branches: [], expiresAt: Date.now() + BRANCH_CACHE_TTL_MS });
+      return [];
+    }
+
+    const pageLoadIdPool = [...pageLoadIds];
+
+    // ── Step 2: click each button & intercept any API call ────────────
+    const cardEls = await page.$$(cardSelector);
+    const usedIds  = new Set(); // avoid assigning same ID to multiple branches
+    const branches = [];
+
+    for (let i = 0; i < cardEls.length; i++) {
+      // Strategy A — data attribute on the card DOM node
+      const dataId = await cardEls[i].evaluate((el) => {
+        for (const key of Object.keys(el.dataset)) {
+          if (/id|corporate|branch|pharmacy|location/i.test(key)) {
+            const val = el.dataset[key];
+            if (val && /^\d+$/.test(val)) return val;
+          }
+        }
+        return el.dataset.id || el.dataset.corporateId || el.dataset.pharmacyId || null;
+      });
+      let corporateId = dataId ? parseInt(dataId, 10) : null;
+
+      if (!corporateId) {
+        // Strategy B — click the button and intercept any ?id= API call
+        const btn = await cardEls[i].$("button");
+        if (btn) {
+          const captured = [];
+          const handler = (req) => {
+            const u = req.url();
+            if (u.startsWith(origin) || u.includes("/api/")) {
+              const id = extractIdFromUrl(u, origin);
+              if (id !== null) {
+                captured.push({ url: u, id });
+              }
+            }
+          };
+          page.on("request", handler);
+          try {
+            await btn.click();
+            await page.waitForTimeout(2000);
+          } catch (_) {}
+          page.off("request", handler);
+
+          if (captured.length > 0) {
+            const pref = captured.find(c => /pharmacy|corporate|branch|location/i.test(c.url));
+            corporateId = (pref || captured[0]).id;
+          }
+        }
+      }
+
+      if (!corporateId) {
+        // Strategy C — React fiber walk to find a numeric/string id prop or match data list
+        corporateId = await cardEls[i].evaluate((el) => {
+          const fiberKey = Object.keys(el).find(k =>
+            k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance")
+          );
+          if (!fiberKey) return null;
+
+          const cardText = el.innerText ? el.innerText.toLowerCase() : "";
+
+          // Helper to recursively find arrays that look like lists of pharmacies/branches
+          const scanPropsForList = (obj, visited = new Set()) => {
+            if (!obj || typeof obj !== "object" || visited.has(obj)) return null;
+            visited.add(obj);
+
+            if (Array.isArray(obj)) {
+              const isPharmacyList = obj.some(item => {
+                if (!item || typeof item !== "object") return false;
+                const keys = Object.keys(item);
+                return keys.some(k => /^(corporateId|pharmacyId|branchId|id|uniqueNumber|pharmacySlug)$/i.test(k)) &&
+                       keys.some(k => /^(name|title|line1|address|town|pincode)$/i.test(k));
+              });
+              if (isPharmacyList) return obj;
+            }
+
+            for (const key of Object.keys(obj)) {
+              const val = obj[key];
+              if (val && typeof val === "object") {
+                const found = scanPropsForList(val, visited);
+                if (found) return found;
+              }
+            }
+            return null;
+          };
+
+          let curr = el[fiberKey];
+          while (curr) {
+            const props = curr.memoizedProps || curr.pendingProps;
+            if (props) {
+              // First check direct properties
+              for (const key of Object.keys(props)) {
+                const val = props[key];
+                if (/^(id|corporateId|pharmacyId|branchId|branch|corporate|location|locationId)$/i.test(key)) {
+                  if (val !== null && val !== undefined) {
+                    if (typeof val === "number") return val;
+                    if (typeof val === "string" && /^\d+$/.test(val)) return parseInt(val, 10);
+                    if (typeof val === "object" && !Array.isArray(val)) {
+                      for (const subKey of Object.keys(val)) {
+                        if (/^(id|corporateId|pharmacyId|branchId|branch|corporate|location|locationId)$/i.test(subKey)) {
+                          const subVal = val[subKey];
+                          if (subVal !== null && subVal !== undefined) {
+                            if (typeof subVal === "number") return subVal;
+                            if (typeof subVal === "string" && /^\d+$/.test(subVal)) return parseInt(subVal, 10);
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+
+              // Then scan for lists
+              const list = scanPropsForList(props);
+              if (list) {
+                for (const item of list) {
+                  const name = String(item.name || item.title || "").toLowerCase();
+                  const line1 = String(item.line1 || "").toLowerCase();
+                  const town = String(item.town || "").toLowerCase();
+                  const pincode = String(item.pincode || item.postcode || "").toLowerCase();
+
+                  const nameMatch = name && cardText.includes(name);
+                  const lineMatch = line1 && cardText.includes(line1);
+                  const townMatch = town && cardText.includes(town);
+                  const pinMatch = pincode && cardText.replace(/\s+/g, "").includes(pincode.replace(/\s+/g, ""));
+
+                  if (nameMatch || lineMatch || townMatch || pinMatch) {
+                    const foundId = item.corporateId || item.pharmacyId || item.branchId || item.id;
+                    if (foundId !== undefined && foundId !== null) {
+                      if (typeof foundId === "number") return foundId;
+                      if (typeof foundId === "string" && /^\d+$/.test(foundId)) return parseInt(foundId, 10);
+                    }
+                  }
+                }
+              }
+            }
+            curr = curr.return;
+          }
+          return null;
+        }).catch(() => null);
+      }
+
+      if (!corporateId) {
+        // Strategy D — use IDs captured at page load (pool), skipping already-used ones
+        const unused = pageLoadIdPool.find(id => !usedIds.has(id));
+        if (unused !== undefined) corporateId = unused;
+      }
+
+      if (corporateId) usedIds.add(corporateId);
+
+      branches.push({
+        name:        cardInfo[i]?.name    || `Branch ${i + 1}`,
+        address:     cardInfo[i]?.address || "",
+        corporateId: corporateId          || null,
+      });
+    }
+
+    const result = branches.length > 1 ? branches : [];
+    _branchCache.set(baseURL, { branches: result, expiresAt: Date.now() + BRANCH_CACHE_TTL_MS });
+    console.log(
+      `[branch-pharmacies] ${origin}: found ${result.length} branches →`,
+      result.map(b => `${b.name} (cid:${b.corporateId})`)
+    );
+    return result;
+
+  } catch (e) {
+    console.warn("[branch-pharmacies] Playwright scrape failed:", e.message);
+    return [];
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
+}
+
+app.get("/api/branch-pharmacies", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const { pharmacyName, bustCache } = req.query;
+  if (!pharmacyName) return res.status(400).json({ error: "pharmacyName required" });
+  const pharmacies = readPharmacies();
+  const pharmacy = pharmacies.find((p) => p.name === pharmacyName);
+  if (!pharmacy) return res.status(404).json({ error: "Pharmacy not found" });
+  // Allow cache busting via ?bustCache=1
+  if (bustCache) _branchCache.delete(pharmacy.baseURL);
+  try {
+    const branches = await fetchBranchPharmacies(pharmacy.baseURL);
+    res.json({ branches, baseURL: pharmacy.baseURL });
+  } catch (e) {
+    res.json({ branches: [], baseURL: pharmacy.baseURL });
   }
 });
 
@@ -523,6 +843,7 @@ app.get("/api/run-tests", (req, res) => {
       set("TD_NEW_EMAIL",           u.newEmail);
       set("TD_CONFIRM_NEW_EMAIL",   u.confirmNewEmail);
       set("USER_JOURNEY_CONDITION_ID", td.ujConditionId);
+      set("USER_JOURNEY_CORPORATE_ID", td.ujCorporateId);
       const overrideCount = Object.keys(tdEnv).length;
       if (overrideCount > 0) {
         const summary = Object.entries(tdEnv)

@@ -1,25 +1,40 @@
 import { defineConfig, devices } from "@playwright/test";
+// Ensure Node.js version is recent enough for Playwright
+const nodeMajor = parseInt(process.versions.node.split(".")[0], 10);
+if (Number.isNaN(nodeMajor) || nodeMajor < 18) {
+  throw new Error(
+    `Playwright requires Node.js 18 or higher. You are running Node.js ${process.versions.node}. Please update your version of Node.js.`,
+  );
+}
 import * as dotenv from "dotenv";
 import * as path from "path";
 import { PHARMACY_SITES } from "./tests/fixtures/pharmacies";
 
 dotenv.config({ path: path.resolve(__dirname, ".env") });
 
-/**
- * CI / one-off override: set BASE_URL in the environment to run against a
- * single pharmacy without touching pharmacies.ts.
- * When BASE_URL is set it takes precedence and a single "CI Override" project
- * is created instead of the full pharmacy list.
- */
 const ciBaseURL = process.env.BASE_URL;
 const isCI = !!process.env.CI;
 
+const pharmacyProjects = PHARMACY_SITES.filter(
+  (site) => !(isCI && site.ciSkip),
+).map((site) => ({
+  name: site.name,
+  use: { ...devices["Desktop Chrome"], baseURL: site.baseURL },
+}));
+
+/**
+ * Keep the named pharmacy projects visible even when BASE_URL is set.
+ * Add a separate CI Override project for ad-hoc single-site runs.
+ */
 const projects = ciBaseURL
-  ? [{ name: "CI Override", use: { ...devices["Desktop Chrome"], baseURL: ciBaseURL } }]
-  : PHARMACY_SITES.filter((site) => !(isCI && site.ciSkip)).map((site) => ({
-      name: site.name,
-      use: { ...devices["Desktop Chrome"], baseURL: site.baseURL },
-    }));
+  ? [
+      ...pharmacyProjects,
+      {
+        name: "CI Override",
+        use: { ...devices["Desktop Chrome"], baseURL: ciBaseURL },
+      },
+    ]
+  : pharmacyProjects;
 
 export default defineConfig({
   testDir: "./tests/e2e",

@@ -27,6 +27,16 @@ export const PHARMACY_SITES: PharmacySite[] = [
     sanityProjectId: "sorypy3x",
   },
   {
+    name: "Stone Pharmacy",
+    baseURL: "https://stonepharmacy.healthya.co.uk/",
+    sanityProjectId: "eyhb5k6o",
+  },
+  {
+    name: "Highfield Pharmacy",
+    baseURL: "https://highfieldpharmacy.healthya.co.uk/",
+    sanityProjectId: "1tgz5dyg",
+  },
+  {
     name: "Pharmaease",
     baseURL: "https://pharmaease.healthya.co.uk/",
     sanityProjectId: "2lyvy3je",

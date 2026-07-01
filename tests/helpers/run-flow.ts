@@ -32,6 +32,7 @@ type JourneyStep =
   | "thank_you"
   | "payment"
   | "success"
+  | "nhs111_end_assessment"
   | "dead_end"
   | "unknown";
 
@@ -93,6 +94,21 @@ async function detectCurrentStep(page: Page): Promise<JourneyStep> {
     '[class*="booking-appointment-success"]',
   ];
   if (await hasVisibleIndicator(successIndicators)) return "success";
+
+  // NHS 111 modal — "You've reached NHS 111" with an "End Assessment" button.
+  // Must be checked BEFORE dead-end so we can click the button and treat it as success.
+  const nhs111ModalIndicators = [
+    '.ant-modal-content:has-text("You\'ve reached NHS 111")',
+    '[role="dialog"]:has-text("You\'ve reached NHS 111")',
+    '.ant-modal-content:has-text("reached NHS 111")',
+    '[role="dialog"]:has-text("reached NHS 111")',
+  ];
+  if (await hasVisibleIndicator(nhs111ModalIndicators)) {
+    const endBtn = page.locator('button:has-text("End Assessment"), a:has-text("End Assessment")').first();
+    if (await endBtn.isVisible({ timeout: 0 }).catch(() => false)) {
+      return "nhs111_end_assessment";
+    }
+  }
 
   // Dead-end states: condition routed to self-care / referral / ineligible.
   const deadEndIndicators = [
@@ -476,6 +492,20 @@ async function runConditionFlowImpl(
 
       if (step === "success") {
         console.log("✔ Booking success state reached!");
+        break;
+      }
+
+      if (step === "nhs111_end_assessment") {
+        console.log('✔ NHS 111 popup detected — clicking "End Assessment"');
+        const endBtn = page
+          .locator('button:has-text("End Assessment"), a:has-text("End Assessment")')
+          .first();
+        await endBtn.click({ force: true }).catch(async () => {
+          await endBtn.evaluate((el: HTMLElement) => el.click());
+        });
+        await page.waitForTimeout(1000);
+        console.log("✔ Flow intentionally ended via End Assessment");
+        flowCompleted = true;
         break;
       }
 

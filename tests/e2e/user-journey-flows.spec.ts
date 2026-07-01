@@ -99,9 +99,11 @@ test.describe("User Journey Flows", () => {
         }
         conditions = getMatchingConditions(allConditions, flow.pattern);
         if (conditions.length === 0) {
-          throw new Error(
-            `No conditions match flow "${flow.id} — ${flow.label}" (${flow.pattern.join(" → ")}) on pharmacy "${pharmacyName}"`,
+          test.skip(
+            true,
+            `No conditions in Sanity match flow "${flow.id} — ${flow.label}" (${flow.pattern.join(" → ")}) for pharmacy "${pharmacyName}" — skipping`,
           );
+          return;
         }
         console.log(
           `🎯 ${conditions.length} matching condition(s) for ${flow.id}: ${conditions

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Playwright E2E tests for multiple pharmacy websites. Select a pharmacy via --project or use npm scripts below.",
   "scripts": {
+    "postinstall": "playwright install chromium",
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",

@@ -33,6 +33,7 @@ type JourneyStep =
   | "payment"
   | "success"
   | "nhs111_end_assessment"
+  | "private_option_unavailable"
   | "dead_end"
   | "unknown";
 
@@ -108,6 +109,16 @@ async function detectCurrentStep(page: Page): Promise<JourneyStep> {
     if (await endBtn.isVisible({ timeout: 0 }).catch(() => false)) {
       return "nhs111_end_assessment";
     }
+  }
+
+  // "Private option isn't available" popup — must be checked BEFORE dead-end
+  // so we can click "Go To Homepage" and treat it as a completed flow.
+  const privateOptionUnavailableIndicators = [
+    'text=/the private option isn\'t available/i',
+    'text=/private option isn\'t available/i',
+  ];
+  if (await hasVisibleIndicator(privateOptionUnavailableIndicators)) {
+    return "private_option_unavailable";
   }
 
   // Dead-end states: condition routed to self-care / referral / ineligible.
@@ -505,6 +516,18 @@ async function runConditionFlowImpl(
         });
         await page.waitForTimeout(1000);
         console.log("✔ Flow intentionally ended via End Assessment");
+        flowCompleted = true;
+        break;
+      }
+
+      if (step === "private_option_unavailable") {
+        console.log('✔ "Private option isn\'t available" popup detected — clicking "Go To Homepage"');
+        const homeBtn = page.locator('button:has-text("Go To Homepage"), a:has-text("Go To Homepage")').first();
+        await homeBtn.click({ force: true }).catch(async () => {
+          await homeBtn.evaluate((el: HTMLElement) => el.click());
+        });
+        await page.waitForTimeout(1000);
+        console.log("✔ Flow completed");
         flowCompleted = true;
         break;
       }

@@ -979,6 +979,60 @@ export class QuestionnairePage {
     return true;
   }
 
+  /**
+   * Types a random letter into an AntD searchable Select, waits for options
+   * to load, then clicks the first available option.
+   */
+  private async fillSearchableDropdown(
+    _wrapper: ReturnType<Page["locator"]>,
+    searchInput: ReturnType<Page["locator"]>,
+    index: number,
+  ): Promise<boolean> {
+    console.log(`[QuestionnairePage] Filling searchable dropdown #${index}`);
+    await searchInput.scrollIntoViewIfNeeded().catch(() => {});
+    await searchInput.click({ force: true }).catch(() => {});
+    await this.page.waitForTimeout(300);
+
+    const letters = ["a", "e", "i", "s", "m", "b", "c"];
+    const letter = letters[Math.floor(Math.random() * letters.length)];
+    await searchInput.fill(letter).catch(() => {});
+    console.log(
+      `[QuestionnairePage] Dropdown #${index} — typed "${letter}", waiting for options`,
+    );
+
+    const dropdown = this.page
+      .locator(".ant-select-dropdown")
+      .filter({ hasNot: this.page.locator(".ant-select-dropdown-hidden") })
+      .last();
+    await dropdown.waitFor({ state: "visible", timeout: 6000 }).catch(() => {});
+    await this.page.waitForTimeout(1000); // allow async API data to finish loading
+
+    const options = dropdown.locator(
+      ".ant-select-item-option:not(.ant-select-item-option-disabled)",
+    );
+    const optCount = await options.count().catch(() => 0);
+
+    if (optCount > 0) {
+      const opt = options.first();
+      if (await opt.isVisible().catch(() => false)) {
+        await opt.scrollIntoViewIfNeeded().catch(() => {});
+        await opt.click({ force: true }).catch(async () => {
+          await opt.evaluate((el: HTMLElement) => el.click());
+        });
+        await this.page.waitForTimeout(500);
+        console.log(`[QuestionnairePage] Dropdown #${index} — option selected`);
+        return true;
+      }
+    }
+
+    await this.page.keyboard.press("Escape").catch(() => {});
+    await this.page.waitForTimeout(300);
+    console.log(
+      `[QuestionnairePage] Dropdown #${index} — no options loaded for "${letter}"`,
+    );
+    return false;
+  }
+
   private getActiveQuestionScope() {
     return this.page
       .locator(
@@ -2037,6 +2091,29 @@ export class QuestionnairePage {
       return true;
     }
 
+    // ── Searchable dropdowns inside questionnaire wrappers ─────────────────
+    const searchableDropdowns = this.page.locator(
+      ".questionnaire-answer-wrapper:visible .ant-select:not(.ant-select-disabled)",
+    );
+    const searchableCount = await searchableDropdowns.count().catch(() => 0);
+    for (let i = 0; i < searchableCount; i++) {
+      const wrapper = searchableDropdowns.nth(i);
+      if (!(await wrapper.isVisible().catch(() => false))) continue;
+      const hasPlaceholder = await wrapper
+        .locator(".ant-select-selection-placeholder")
+        .isVisible()
+        .catch(() => false);
+      if (!hasPlaceholder) continue;
+
+      const searchInput = wrapper
+        .locator("input.ant-select-selection-search-input, input[type='search']")
+        .first();
+      if (!(await searchInput.isVisible().catch(() => false))) continue;
+
+      const filled = await this.fillSearchableDropdown(wrapper, searchInput, i + 1);
+      if (filled) return true;
+    }
+
     // ── AntD Select dropdowns (searchable/regular select) ───────────────────
     const antSelects = this.page.locator(
       ".questionnaire-answer-wrapper:visible .ant-select:not(.ant-select-disabled)",
@@ -2055,6 +2132,14 @@ export class QuestionnairePage {
       await sel.scrollIntoViewIfNeeded().catch(() => {});
       await sel.click().catch(() => {});
       await this.page.waitForTimeout(600).catch(() => {});
+
+      const searchInput = sel
+        .locator("input.ant-select-selection-search-input, input[type='search']")
+        .first();
+      if (await searchInput.isVisible().catch(() => false)) {
+        const filled = await this.fillSearchableDropdown(sel, searchInput, i + 1);
+        if (filled) return true;
+      }
 
       // Click the first non-disabled option in the dropdown
       const option = this.page

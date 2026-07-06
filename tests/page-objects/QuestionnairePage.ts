@@ -1835,6 +1835,124 @@ export class QuestionnairePage {
     const checkboxGroups = this.page.locator(".ant-checkbox-group:visible");
     const cbGroupCount = await checkboxGroups.count().catch(() => 0);
 
+    const clickCheckboxOption = async (
+      option: ReturnType<Page["locator"]>,
+    ): Promise<boolean> => {
+      const forceCheckInput = async (
+        input: ReturnType<Page["locator"]>,
+      ): Promise<boolean> => {
+        if (!(await input.count().catch(() => 0))) return false;
+        await input.scrollIntoViewIfNeeded().catch(() => {});
+        const alreadyChecked = await input.isChecked().catch(() => false);
+        if (!alreadyChecked) {
+          await input.evaluate((el: HTMLInputElement) => {
+            const setChecked = Object.getOwnPropertyDescriptor(
+              HTMLInputElement.prototype,
+              "checked",
+            )?.set;
+            setChecked?.call(el, true);
+            el.dispatchEvent(
+              new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+            );
+            el.dispatchEvent(
+              new MouseEvent("mouseup", { bubbles: true, cancelable: true }),
+            );
+            el.dispatchEvent(
+              new MouseEvent("click", { bubbles: true, cancelable: true }),
+            );
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+          }).catch(async () => {
+            await input.click({ force: true }).catch(() => {});
+          });
+        }
+        await this.page.waitForTimeout(250);
+        return await input.isChecked().catch(() => false);
+      };
+
+      const checkboxInput = option.locator('input[type="checkbox"]').first();
+      const checkboxLabel = option.locator(
+        ".ant-checkbox-label, .ant-checkbox-wrapper, label",
+      ).first();
+      const checkboxVisual = option
+        .locator(".ant-checkbox-wrapper, .ant-checkbox, .ant-checkbox-inner")
+        .first();
+      const checkboxWrapper = option
+        .locator(".ant-checkbox-wrapper")
+        .first();
+
+      const clickTargets = [
+        checkboxWrapper,
+        checkboxLabel,
+        checkboxVisual,
+        checkboxInput,
+      ];
+
+      for (const target of clickTargets) {
+        if (!(await target.count().catch(() => 0))) continue;
+        if (!(await target.isVisible().catch(() => false))) continue;
+        await target.scrollIntoViewIfNeeded().catch(() => {});
+        await target.click({ force: true }).catch(async () => {
+          await target.evaluate((el: HTMLElement) => el.click());
+        });
+        await this.page.waitForTimeout(250);
+        if (await checkboxInput.isChecked().catch(() => false)) break;
+      }
+
+      if (!(await checkboxInput.isChecked().catch(() => false))) {
+        await forceCheckInput(checkboxInput);
+      }
+
+      if (!(await checkboxInput.isChecked().catch(() => false))) {
+        const labelInput = option.locator("label input[type='checkbox']").first();
+        await forceCheckInput(labelInput);
+      }
+
+      if (await checkboxVisual.isVisible().catch(() => false)) {
+        await checkboxVisual.scrollIntoViewIfNeeded().catch(() => {});
+      }
+
+      // If this option is a parent row that reveals nested child checkboxes,
+      // cascade the selection to any visible descendants in the same subtree.
+      const nestedCheckboxes = option.locator(
+        [
+          ".ant-checkbox-wrapper input[type='checkbox']",
+          ".ant-checkbox-wrapper .ant-checkbox-input",
+          "input[type='checkbox']",
+        ].join(", "),
+      );
+      const nestedCount = await nestedCheckboxes.count().catch(() => 0);
+      if (nestedCount > 1) {
+        for (let k = 1; k < nestedCount; k++) {
+          const nested = nestedCheckboxes.nth(k);
+          if (!(await nested.isVisible().catch(() => false))) continue;
+          if (await nested.isChecked().catch(() => false)) continue;
+          await forceCheckInput(nested);
+        }
+        await this.page.waitForTimeout(300);
+      }
+
+      await this.page.waitForTimeout(300);
+
+      const inputChecked = await checkboxInput
+        .isChecked()
+        .catch(() => false);
+      const visualChecked = await option
+        .locator(
+          [
+            ".ant-checkbox-checked",
+            ".ant-checkbox-wrapper-checked",
+            ".ant-checkbox-input:checked",
+            "[role='checkbox'][aria-checked='true']",
+          ].join(", "),
+        )
+        .first()
+        .isVisible({ timeout: 300 })
+        .catch(() => false);
+
+      return inputChecked || visualChecked;
+    };
+
     for (let i = 0; i < cbGroupCount; i++) {
       const group = checkboxGroups.nth(i);
       if (!(await group.isVisible().catch(() => false))) continue;
@@ -1862,11 +1980,7 @@ export class QuestionnairePage {
         for (const idx of indices) {
           const opt = options.nth(idx);
           if (await opt.isVisible().catch(() => false)) {
-            await opt.scrollIntoViewIfNeeded().catch(() => {});
-            await opt.click({ force: true }).catch(async () => {
-              await opt.evaluate((el: HTMLElement) => el.click());
-            });
-            await this.page.waitForTimeout(500).catch(() => {});
+            await clickCheckboxOption(opt);
           }
         }
       } else {
@@ -1877,24 +1991,31 @@ export class QuestionnairePage {
           const text = await opt.textContent().catch(() => "");
           if (/none of the above/i.test(text ?? "")) {
             if (await opt.isVisible().catch(() => false)) {
-              await opt.scrollIntoViewIfNeeded().catch(() => {});
-              await opt.click({ force: true }).catch(async () => {
-                await opt.evaluate((el: HTMLElement) => el.click());
-              });
-              await this.page.waitForTimeout(500).catch(() => {});
-              selectedSafe = true;
+              selectedSafe = await clickCheckboxOption(opt);
               break;
             }
           }
         }
+        // Pass 2: prefer any option that is NOT "Others"/"Other" (which triggers sub-inputs)
+        if (!selectedSafe) {
+          for (let j = 0; j < optCount; j++) {
+            const opt = options.nth(j);
+            const text = (
+              (await opt.textContent().catch(() => "")) ?? ""
+            ).trim();
+            if (/^others?$/i.test(text)) continue; // skip "Other"/"Others"
+            if (await opt.isVisible().catch(() => false)) {
+              selectedSafe = await clickCheckboxOption(opt);
+              break;
+            }
+          }
+        }
+
+        // Pass 3: fall back to first option (may be "Others" — sub-inputs handled below)
         if (!selectedSafe) {
           const first = options.nth(0);
           if (await first.isVisible().catch(() => false)) {
-            await first.scrollIntoViewIfNeeded().catch(() => {});
-            await first.click({ force: true }).catch(async () => {
-              await first.evaluate((el: HTMLElement) => el.click());
-            });
-            await this.page.waitForTimeout(500).catch(() => {});
+            selectedSafe = await clickCheckboxOption(first);
           }
         }
       }
